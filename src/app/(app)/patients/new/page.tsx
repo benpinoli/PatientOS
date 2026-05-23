@@ -1,5 +1,6 @@
 import { requireUser } from "@/lib/server-helpers";
 import { createPatient } from "../../actions";
+import { AssigneeFields } from "./AssigneeFields";
 
 export const dynamic = "force-dynamic";
 
@@ -10,8 +11,7 @@ export default async function NewPatientPage() {
     supabase.from("app_users").select("*").eq("active", true).order("full_name"),
   ]);
 
-  const reps = (users ?? []).filter((u) => u.roles?.includes("REP") || u.roles?.includes("ATP"));
-  const atps = (users ?? []).filter((u) => u.roles?.includes("ATP"));
+  const activeUsers = users ?? [];
 
   return (
     <div className="max-w-xl space-y-4">
@@ -38,23 +38,7 @@ export default async function NewPatientPage() {
           ))}
         </Select>
 
-        <Select label="Assigned rep" name="assigned_rep_id" defaultValue={profile.id}>
-          <option value="">— unassigned —</option>
-          {reps.map((u) => (
-            <option key={u.id} value={u.id}>
-              {u.full_name} ({u.roles?.join("/")})
-            </option>
-          ))}
-        </Select>
-
-        <Select label="Assigned ATP" name="assigned_atp_id">
-          <option value="">— unassigned —</option>
-          {atps.map((u) => (
-            <option key={u.id} value={u.id}>
-              {u.full_name} ({u.roles?.join("/")})
-            </option>
-          ))}
-        </Select>
+        <AssigneeFields users={activeUsers} defaultRepId={profile.id} />
 
         <div className="flex justify-end gap-2 pt-2">
           <button

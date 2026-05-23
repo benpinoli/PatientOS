@@ -65,7 +65,7 @@ export default async function AdminPage() {
                 <tr>
                   <th className="px-4 py-2 w-10">#</th>
                   <th className="px-4 py-2">Label</th>
-                  <th className="px-4 py-2">Owner</th>
+                  <th className="px-4 py-2">Awaiting</th>
                   <th className="px-4 py-2">ATP review</th>
                   <th className="px-4 py-2">Required</th>
                 </tr>
