@@ -309,7 +309,9 @@ update public.tasks set status='APPROVED'
 update public.tasks set status='IN_PROGRESS', due_date = current_date + 1
   where patient_id='20000000-0000-0000-0000-000000000007' and order_index = 5;
 
--- Patient 8 (Henry, Medicare): Matt rep / Steve ATP, mid-pipeline.
+-- Patient 8 (Henry, Medicare): Matt's solo case, mid-pipeline. Note the
+-- DONE_PENDING_REVIEW state with priority=2 — Matt-as-ATP can self-approve
+-- this since he's the assigned_atp (solo-case carve-out in the gate trigger).
 update public.tasks set status='APPROVED'
   where patient_id='20000000-0000-0000-0000-000000000008' and order_index in (1,2);
 update public.tasks
