@@ -1,0 +1,40 @@
+# Supabase local-dev project config.
+# Only used by `supabase start`. Production project is configured in the dashboard.
+project_id = "choice-tracker"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 17
+
+[studio]
+enabled = true
+port = 54323
+
+[auth]
+enabled = true
+site_url = "http://localhost:3000"
+additional_redirect_urls = ["http://localhost:3000/auth/callback"]
+jwt_expiry = 3600
+enable_signup = true
+
+# Microsoft / Azure AD provider (Outlook). Off by default — set the env
+# vars below in .env and `supabase start` will pick them up.
+[auth.external.azure]
+enabled = true
+client_id = "env(SUPABASE_AUTH_EXTERNAL_AZURE_CLIENT_ID)"
+secret    = "env(SUPABASE_AUTH_EXTERNAL_AZURE_SECRET)"
+redirect_uri = "http://localhost:54321/auth/v1/callback"
+url = ""   # leave blank for the multi-tenant common endpoint
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+enable_confirmations = false
