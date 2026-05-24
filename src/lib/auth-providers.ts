@@ -26,7 +26,7 @@ export const authProviders: AuthProviderConfig[] = [
   {
     provider: "azure",
     label: "Sign in with Microsoft (Outlook)",
-    enabled: envFlag("NEXT_PUBLIC_AUTH_AZURE_ENABLED", true),
+    enabled: envFlag("NEXT_PUBLIC_AUTH_AZURE_ENABLED", false),
     primary: true,
   },
   {

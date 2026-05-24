@@ -1,0 +1,23 @@
+# AWS Amplify Hosting — Next.js 16 (HANDOFF step 7)
+# Connect repo branch `main` in Amplify Console (us-west-2).
+# Set env vars in Console (do not commit secrets):
+#   NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY
+#   NEXT_PUBLIC_AUTH_AZURE_ENABLED, NEXT_PUBLIC_AUTH_GOOGLE_ENABLED, NEXT_PUBLIC_AUTH_EMAIL_ENABLED
+
+version: 1
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - npm ci
+    build:
+      commands:
+        - npm run build
+  artifacts:
+    baseDirectory: .next
+    files:
+      - "**/*"
+  cache:
+    paths:
+      - node_modules/**/*
+      - .next/cache/**/*

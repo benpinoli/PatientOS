@@ -1,0 +1,8 @@
+# Point a domain at the EC2 Elastic IP, then:
+#   sudo cp Caddyfile /etc/caddy/Caddyfile && sudo systemctl reload caddy
+#
+# Until you have a domain, use Kong directly on :8000 (HTTP only).
+
+api.choicetracker.example.com {
+  reverse_proxy localhost:8000
+}

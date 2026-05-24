@@ -36,7 +36,19 @@ export function LoginForm({
     e.preventDefault();
     setBusy(true);
     setLocalError(null);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    let error: { message: string } | null = null;
+    try {
+      ({ error } = await supabase.auth.signInWithPassword({ email, password }));
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Network error";
+      setLocalError(
+        msg.includes("fetch")
+          ? "Cannot reach Supabase. If the app is HTTPS (Amplify), use the hosted Supabase URL (HTTPS), not http://EC2-IP:8000."
+          : msg,
+      );
+      setBusy(false);
+      return;
+    }
     if (error) {
       setLocalError(error.message);
       setBusy(false);
