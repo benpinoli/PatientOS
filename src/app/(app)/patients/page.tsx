@@ -1,35 +1,77 @@
 import Link from "next/link";
-import { requireUser } from "@/lib/server-helpers";
+import { requireUser, hasRole } from "@/lib/server-helpers";
+import { isPatientAssignedToUser } from "@/lib/queries";
+import { PatientTable, type PatientListRow } from "./PatientTable";
 
 export const dynamic = "force-dynamic";
 
 export default async function PatientsListPage() {
-  const { supabase } = await requireUser();
+  const { supabase, profile } = await requireUser();
 
-  const { data: patients } = await supabase
-    .from("patients")
-    .select(`
-      id, external_code, first_name, last_name, status,
+  const [{ data: patients }, { data: reports }] = await Promise.all([
+    supabase
+      .from("patients")
+      .select(
+        `
+      id, external_code, first_name, last_name, status, created_at,
+      assigned_rep_id, assigned_atp_id,
       payer:payers ( name, type ),
       rep:app_users!patients_assigned_rep_id_fkey ( full_name ),
       atp:app_users!patients_assigned_atp_id_fkey ( full_name )
-    `)
-    .order("created_at", { ascending: false });
+    `,
+      )
+      .order("created_at", { ascending: false }),
+    supabase.from("app_users").select("id").eq("manager_id", profile.id),
+  ]);
 
-  type Row = {
-    id: string;
-    external_code: string | null;
-    first_name: string;
-    last_name: string;
-    status: string;
-    payer: { name: string; type: string } | null;
-    rep: { full_name: string | null } | null;
-    atp: { full_name: string | null } | null;
+  type Row = PatientListRow & {
+    assigned_rep_id: string | null;
+    assigned_atp_id: string | null;
   };
+
   const rows = (patients ?? []) as unknown as Row[];
+  const reportIds = new Set((reports ?? []).map((r) => r.id));
+
+  const isManager = hasRole(profile, "MANAGER");
+  const isBoss = hasRole(profile, "BOSS");
+  const showTeamSplit = isManager || isBoss;
+
+  const myPatients: PatientListRow[] = [];
+  const otherPatients: PatientListRow[] = [];
+
+  for (const p of rows) {
+    const listRow: PatientListRow = {
+      id: p.id,
+      external_code: p.external_code,
+      first_name: p.first_name,
+      last_name: p.last_name,
+      status: p.status,
+      payer: p.payer,
+      rep: p.rep,
+      atp: p.atp,
+    };
+
+    if (!showTeamSplit) {
+      myPatients.push(listRow);
+      continue;
+    }
+
+    if (isPatientAssignedToUser(p, profile.id)) {
+      myPatients.push(listRow);
+      continue;
+    }
+
+    const onTeam =
+      (p.assigned_rep_id && reportIds.has(p.assigned_rep_id)) ||
+      (p.assigned_atp_id && reportIds.has(p.assigned_atp_id));
+
+    if (isBoss || (isManager && onTeam)) {
+      otherPatients.push(listRow);
+    }
+  }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
       <div className="flex items-end justify-between">
         <div>
           <h1 className="text-xl font-semibold text-zinc-900">Patients</h1>
@@ -45,50 +87,30 @@ export default async function PatientsListPage() {
         </Link>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
-        <table className="w-full divide-y divide-zinc-200 text-sm">
-          <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
-            <tr>
-              <th className="px-4 py-2.5">Patient</th>
-              <th className="px-4 py-2.5">Code</th>
-              <th className="px-4 py-2.5">Payer</th>
-              <th className="px-4 py-2.5">Rep</th>
-              <th className="px-4 py-2.5">ATP</th>
-              <th className="px-4 py-2.5">Status</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-100">
-            {rows.map((p) => (
-              <tr key={p.id} className="hover:bg-zinc-50">
-                <td className="px-4 py-3">
-                  <Link
-                    href={`/patients/${p.id}`}
-                    className="font-medium text-zinc-900 hover:underline"
-                  >
-                    {p.last_name}, {p.first_name}
-                  </Link>
-                </td>
-                <td className="px-4 py-3 text-xs text-zinc-500">{p.external_code ?? "—"}</td>
-                <td className="px-4 py-3 text-xs text-zinc-600">{p.payer?.name ?? "—"}</td>
-                <td className="px-4 py-3 text-xs text-zinc-600">{p.rep?.full_name ?? "—"}</td>
-                <td className="px-4 py-3 text-xs text-zinc-600">{p.atp?.full_name ?? "—"}</td>
-                <td className="px-4 py-3 text-xs">
-                  <span className="rounded bg-zinc-100 px-2 py-0.5 font-medium text-zinc-700">
-                    {p.status}
-                  </span>
-                </td>
-              </tr>
-            ))}
-            {rows.length === 0 && (
-              <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-sm text-zinc-500">
-                  No patients yet. Create one to get started.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      {showTeamSplit ? (
+        <>
+          <section className="space-y-2">
+            <h2 className="text-base font-semibold text-zinc-900">My patients</h2>
+            <p className="text-sm text-zinc-500">
+              Cases where you are the assigned rep or ATP.
+            </p>
+            <PatientTable rows={myPatients} />
+          </section>
+
+          <section className="space-y-2">
+            <h2 className="text-base font-semibold text-zinc-900">Other patients</h2>
+            <p className="text-sm text-zinc-500">
+              Your team&apos;s caseload — you can view progress but others own the work.
+            </p>
+            <PatientTable rows={otherPatients} />
+          </section>
+        </>
+      ) : (
+        <section className="space-y-2">
+          <h2 className="text-base font-semibold text-zinc-900">My patients</h2>
+          <PatientTable rows={myPatients} />
+        </section>
+      )}
     </div>
   );
 }
