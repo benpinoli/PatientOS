@@ -36,6 +36,7 @@ export default async function AdminPage() {
                 <th className="px-4 py-2.5">Email</th>
                 <th className="px-4 py-2.5">Roles</th>
                 <th className="px-4 py-2.5">Manager</th>
+                <th className="px-4 py-2.5">ATP supervisor</th>
                 <th className="px-4 py-2.5">Active</th>
                 <th className="px-4 py-2.5 text-right">Save</th>
               </tr>

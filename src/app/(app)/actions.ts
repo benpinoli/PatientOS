@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import type { TaskStatus } from "@/lib/db-types";
+import { DEFAULT_DUE_DAYS } from "@/lib/constants";
 
 // =====================================================================
 // Task mutations
@@ -52,10 +53,34 @@ export async function createPatient(form: FormData) {
   const referral_source = (form.get("referral_source") as string)?.trim() || null;
   const payer_id = form.get("payer_id") as string;
   const assigned_rep_id = (form.get("assigned_rep_id") as string) || null;
-  const assigned_atp_id = (form.get("assigned_atp_id") as string) || null;
+  let assigned_atp_id = (form.get("assigned_atp_id") as string) || null;
 
   if (!first_name || !last_name || !payer_id) {
     throw new Error("first_name, last_name, and payer_id are required");
+  }
+
+  // If the form didn't supply an ATP, derive one from the rep's user row:
+  // ATP-credentialed reps are their own ATP; non-ATP reps use their
+  // supervising_atp_id. Patient still requires SOME ATP at the end.
+  if (!assigned_atp_id && assigned_rep_id) {
+    const { data: rep } = await supabase
+      .from("app_users")
+      .select("id, roles, supervising_atp_id")
+      .eq("id", assigned_rep_id)
+      .maybeSingle();
+    if (rep) {
+      if (Array.isArray(rep.roles) && rep.roles.includes("ATP")) {
+        assigned_atp_id = rep.id;
+      } else if (rep.supervising_atp_id) {
+        assigned_atp_id = rep.supervising_atp_id;
+      }
+    }
+  }
+
+  if (!assigned_atp_id) {
+    throw new Error(
+      "no ATP could be assigned — the selected rep has no supervising_atp_id set; ask an admin to assign one",
+    );
   }
 
   // Find the payer to learn its type (which templates to instantiate).
@@ -83,6 +108,11 @@ export async function createPatient(form: FormData) {
     .single();
   if (insErr || !inserted) throw new Error(insErr?.message ?? "patient insert failed");
 
+  // Compute the default due date = today + DEFAULT_DUE_DAYS, as an ISO date string.
+  const dueDate = new Date();
+  dueDate.setDate(dueDate.getDate() + DEFAULT_DUE_DAYS);
+  const dueDateISO = dueDate.toISOString().slice(0, 10);
+
   // Pull matching templates and instantiate tasks (snapshotting fields).
   const { data: templates, error: tErr } = await supabase
     .from("task_templates")
@@ -101,6 +131,7 @@ export async function createPatient(form: FormData) {
       required: t.required,
       order_index: t.default_order,
       status: "NOT_STARTED" as const,
+      due_date: dueDateISO,
     }));
     const { error: tInsErr } = await supabase.from("tasks").insert(taskRows);
     if (tInsErr) throw new Error(tInsErr.message);
@@ -119,6 +150,7 @@ export async function updateUser(
   patch: {
     roles?: string[];
     manager_id?: string | null;
+    supervising_atp_id?: string | null;
     active?: boolean;
     location?: string | null;
     full_name?: string | null;

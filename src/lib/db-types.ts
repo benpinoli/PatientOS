@@ -25,6 +25,8 @@ export type AppUser = {
   roles: Role[];
   location: string | null;
   manager_id: string | null;
+  /** Default ATP supervisor for non-ATP reps. Null for ATP-credentialed users. */
+  supervising_atp_id: string | null;
   active: boolean;
   created_at: string;
 };

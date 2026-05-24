@@ -1,6 +1,12 @@
 import { requireUser } from "@/lib/server-helpers";
+<<<<<<< HEAD
 import { createPatient } from "../../actions";
 import { AssigneeFields } from "./AssigneeFields";
+=======
+import type { AppUser, Payer } from "@/lib/db-types";
+import { DEFAULT_DUE_DAYS } from "@/lib/constants";
+import { NewPatientForm } from "./NewPatientForm";
+>>>>>>> 6951215c61f4b6d7e84f07c85c49206ee0c177dc
 
 export const dynamic = "force-dynamic";
 
@@ -11,15 +17,20 @@ export default async function NewPatientPage() {
     supabase.from("app_users").select("*").eq("active", true).order("full_name"),
   ]);
 
+<<<<<<< HEAD
   const activeUsers = users ?? [];
 
+=======
+>>>>>>> 6951215c61f4b6d7e84f07c85c49206ee0c177dc
   return (
     <div className="max-w-xl space-y-4">
       <h1 className="text-xl font-semibold text-zinc-900">New patient</h1>
       <p className="text-sm text-zinc-500">
         Creating a patient auto-instantiates the task list from the matching
-        payer-type template. You can edit/reorder tasks later.
+        payer-type template. All tasks default to a {DEFAULT_DUE_DAYS}-day due
+        date from today (configurable in <code>src/lib/constants.ts</code>).
       </p>
+<<<<<<< HEAD
 
       <form action={createPatient} className="space-y-3 rounded-lg border border-zinc-200 bg-white p-5">
         <div className="grid grid-cols-2 gap-3">
@@ -49,58 +60,13 @@ export default async function NewPatientPage() {
           </button>
         </div>
       </form>
-    </div>
-  );
-}
-
-function Field({
-  label,
-  name,
-  required,
-  type = "text",
-}: {
-  label: string;
-  name: string;
-  required?: boolean;
-  type?: string;
-}) {
-  return (
-    <label className="block">
-      <span className="text-xs font-medium text-zinc-700">{label}</span>
-      <input
-        type={type}
-        name={name}
-        required={required}
-        className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
+=======
+      <NewPatientForm
+        payers={(payers ?? []) as Payer[]}
+        users={(users ?? []) as AppUser[]}
+        currentUserId={profile.id}
       />
-    </label>
-  );
-}
-
-function Select({
-  label,
-  name,
-  required,
-  defaultValue,
-  children,
-}: {
-  label: string;
-  name: string;
-  required?: boolean;
-  defaultValue?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="block">
-      <span className="text-xs font-medium text-zinc-700">{label}</span>
-      <select
-        name={name}
-        required={required}
-        defaultValue={defaultValue}
-        className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm"
-      >
-        {children}
-      </select>
-    </label>
+>>>>>>> 6951215c61f4b6d7e84f07c85c49206ee0c177dc
+    </div>
   );
 }

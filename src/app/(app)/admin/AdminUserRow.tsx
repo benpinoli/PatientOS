@@ -10,8 +10,17 @@ export function AdminUserRow({ user, allUsers }: { user: AppUser; allUsers: AppU
   const [pending, start] = useTransition();
   const [roles, setRoles] = useState<Role[]>((user.roles ?? []) as Role[]);
   const [managerId, setManagerId] = useState<string>(user.manager_id ?? "");
+  const [supervisingAtpId, setSupervisingAtpId] = useState<string>(
+    user.supervising_atp_id ?? "",
+  );
   const [active, setActive] = useState<boolean>(user.active);
   const [saved, setSaved] = useState(false);
+
+  // ATPs are their own ATP — don't show a supervisor picker for them.
+  const isAtp = roles.includes("ATP");
+  const atpCandidates = allUsers.filter(
+    (u) => u.id !== user.id && (u.roles?.includes("ATP") ?? false),
+  );
 
   const toggleRole = (r: Role) => {
     setRoles((prev) => (prev.includes(r) ? prev.filter((x) => x !== r) : [...prev, r]));
@@ -22,6 +31,8 @@ export function AdminUserRow({ user, allUsers }: { user: AppUser; allUsers: AppU
       await updateUser(user.id, {
         roles,
         manager_id: managerId || null,
+        // Clear supervising ATP if this user IS an ATP (rule from spec).
+        supervising_atp_id: isAtp ? null : (supervisingAtpId || null),
         active,
       });
       setSaved(true);
@@ -65,6 +76,24 @@ export function AdminUserRow({ user, allUsers }: { user: AppUser; allUsers: AppU
               </option>
             ))}
         </select>
+      </td>
+      <td className="px-4 py-3">
+        {isAtp ? (
+          <span className="text-xs italic text-zinc-400">self (ATP)</span>
+        ) : (
+          <select
+            value={supervisingAtpId}
+            onChange={(e) => setSupervisingAtpId(e.target.value)}
+            className="rounded border border-zinc-300 bg-white px-2 py-1 text-xs"
+          >
+            <option value="">— none —</option>
+            {atpCandidates.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.full_name ?? u.email}
+              </option>
+            ))}
+          </select>
+        )}
       </td>
       <td className="px-4 py-3">
         <label className="inline-flex cursor-pointer items-center gap-2 text-xs">
