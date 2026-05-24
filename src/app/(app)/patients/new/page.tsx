@@ -1,12 +1,7 @@
 import { requireUser } from "@/lib/server-helpers";
-<<<<<<< HEAD
-import { createPatient } from "../../actions";
-import { AssigneeFields } from "./AssigneeFields";
-=======
 import type { AppUser, Payer } from "@/lib/db-types";
 import { DEFAULT_DUE_DAYS } from "@/lib/constants";
 import { NewPatientForm } from "./NewPatientForm";
->>>>>>> 6951215c61f4b6d7e84f07c85c49206ee0c177dc
 
 export const dynamic = "force-dynamic";
 
@@ -17,11 +12,6 @@ export default async function NewPatientPage() {
     supabase.from("app_users").select("*").eq("active", true).order("full_name"),
   ]);
 
-<<<<<<< HEAD
-  const activeUsers = users ?? [];
-
-=======
->>>>>>> 6951215c61f4b6d7e84f07c85c49206ee0c177dc
   return (
     <div className="max-w-xl space-y-4">
       <h1 className="text-xl font-semibold text-zinc-900">New patient</h1>
@@ -30,43 +20,11 @@ export default async function NewPatientPage() {
         payer-type template. All tasks default to a {DEFAULT_DUE_DAYS}-day due
         date from today (configurable in <code>src/lib/constants.ts</code>).
       </p>
-<<<<<<< HEAD
-
-      <form action={createPatient} className="space-y-3 rounded-lg border border-zinc-200 bg-white p-5">
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="First name" name="first_name" required />
-          <Field label="Last name" name="last_name" required />
-        </div>
-        <Field label="External code (P-####)" name="external_code" />
-        <Field label="Referral source" name="referral_source" />
-
-        <Select label="Payer" name="payer_id" required>
-          <option value="">Select a payer…</option>
-          {(payers ?? []).map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name} ({p.type})
-            </option>
-          ))}
-        </Select>
-
-        <AssigneeFields users={activeUsers} defaultRepId={profile.id} />
-
-        <div className="flex justify-end gap-2 pt-2">
-          <button
-            type="submit"
-            className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800"
-          >
-            Create patient + tasks
-          </button>
-        </div>
-      </form>
-=======
       <NewPatientForm
         payers={(payers ?? []) as Payer[]}
         users={(users ?? []) as AppUser[]}
         currentUserId={profile.id}
       />
->>>>>>> 6951215c61f4b6d7e84f07c85c49206ee0c177dc
     </div>
   );
 }
