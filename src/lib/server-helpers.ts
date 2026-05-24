@@ -30,6 +30,7 @@ export async function requireUser() {
         roles: ["REP"],
         location: null,
         manager_id: null,
+        supervising_atp_id: null,
         active: false,
         created_at: new Date().toISOString(),
       } as AppUser,
@@ -44,5 +45,5 @@ export function hasRole(profile: AppUser, role: AppUser["roles"][number]) {
 }
 
 export function isAdmin(profile: AppUser) {
-  return hasRole(profile, "BOSS") || hasRole(profile, "MANAGER");
+  return hasRole(profile, "BOSS") || hasRole(profile, "MANAGER") || hasRole(profile, "ATP");
 }

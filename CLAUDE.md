@@ -57,9 +57,9 @@ UUIDs are deterministic in `supabase/seed.sql` (`00000000-0000-0000-0000-0000000
 - **React 19.2.4**.
 - **TypeScript 5**.
 - **Tailwind CSS 4** via `@tailwindcss/postcss`.
-- **Supabase**: Postgres 17 + GoTrue Auth + Row-Level Security. Local dev runs the Supabase CLI stack.
+- **Supabase**: Postgres 17 + GoTrue Auth + PostgREST + Kong + Row-Level Security. Local dev can run the Supabase CLI stack; the production target is self-hosted Supabase on AWS EC2.
 - **`@supabase/ssr`** for cookie-based auth on Next App Router — server client in `src/lib/supabase/server.ts`, browser client in `src/lib/supabase/browser.ts`, cookie refresh in `src/proxy.ts`.
-- Intended deployment: **Vercel**, with **Microsoft (Azure AD / Entra) OAuth** as the default auth provider (most Choice staff use Outlook). Other providers are config-driven (see `src/lib/auth-providers.ts`).
+- Intended deployment: **AWS Amplify** for the Next.js app, pointed at self-hosted Supabase on AWS. Microsoft (Azure AD / Entra) OAuth is the default auth provider; other providers are config-driven (see `src/lib/auth-providers.ts`).
 
 ---
 
@@ -73,15 +73,17 @@ UUIDs are deterministic in `supabase/seed.sql` (`00000000-0000-0000-0000-0000000
 ├── next.config.ts, postcss.config.mjs, tsconfig.json, package.json
 ├── supabase/
 │   ├── config.toml             # Local supabase CLI: ports, Azure provider, email auth
-│   ├── seed.sql                # Synthetic auth.users + app_users + payers + templates + 6 patients
+│   ├── seed.sql                # Synthetic auth.users + app_users + payers + templates + 9 patients
 │   └── migrations/
 │       ├── 0001_init.sql       # All 5 tables + handle_new_auth_user trigger
 │       ├── 0002_rls.sql        # current_user_roles, has_any_role, reports_to_me + policies
-│       └── 0003_approve_gate.sql # enforce_task_approval_gate trigger
+│       ├── 0003_approve_gate.sql # enforce_task_approval_gate trigger
+│       ├── 0004_supervising_atp.sql # app_users.supervising_atp_id
+│       └── 0005_harden_user_and_patient_workflows.sql # user RPCs + atomic create patient
 └── src/
     ├── proxy.ts                # Refresh Supabase cookie on every req + redirect unauth users to /login (Next 16 proxy convention)
     ├── app/
-    │   ├── layout.tsx          # Root HTML shell + Geist fonts; sets app title
+    │   ├── layout.tsx          # Root HTML shell; sets app title
     │   ├── globals.css         # Tailwind 4 imports
     │   ├── login/
     │   │   ├── page.tsx        # Server component; reads enabledProviders() and renders LoginForm
@@ -129,6 +131,7 @@ All tables live in `public`. See `supabase/migrations/0001_init.sql` for the sou
 | `roles` | `text[]` NOT NULL DEFAULT `{REP}` | Multi-valued; check constraint limits to `ATP/REP/MANAGER/BOSS` |
 | `location` | `text` | Free text (e.g. "Las Vegas", "Reno") |
 | `manager_id` | `uuid` | Self-FK to another `app_users`; null for top of org |
+| `supervising_atp_id` | `uuid` | Default ATP supervisor for non-ATP reps; null for ATP-credentialed users |
 | `active` | `boolean` DEFAULT `false` | New users start inactive; admins flip to true |
 | `created_at` | `timestamptz` DEFAULT `now()` | |
 
@@ -179,7 +182,7 @@ All tables live in `public`. See `supabase/migrations/0001_init.sql` for the sou
 | `link` | `text` | Optional URL (e.g. to a Drive doc) — the only "doc" support in v1 |
 | `start_date` | `date` | Optional |
 | `due_date` | `date` | Optional; drives overdue/priority sort |
-| `priority` | `int` | Lower = more urgent. Null = no manual bump. Used as primary sort key |
+| `priority` | `int` | Lower = more urgent. Null = no manual bump. Used as one signal in the dashboard queue score |
 | `completed_by` | `uuid` | Stamped by trigger when status enters DONE_PENDING_REVIEW / APPROVED |
 | `completed_at` | `timestamptz` | Stamped by trigger |
 | `blocked_reason` | `text` | Free text; used when status = BLOCKED |
@@ -202,11 +205,11 @@ These are kept as `text` + `check` rather than Postgres `ENUM`s on purpose — a
 RLS is enabled on all 5 tables in `0002_rls.sql`. Visibility, in plain English:
 
 - **BOSS** — sees and writes everything. No filtering.
-- **MANAGER** — sees everything BOSS would on their own assignments, PLUS any patient whose `assigned_rep_id` or `assigned_atp_id` reports to them (i.e. that person's `manager_id == auth.uid()`). Can write templates and `app_users` (admin). Cannot write `payers` (BOSS only).
+- **MANAGER** — sees everything BOSS would on their own assignments, PLUS any patient whose `assigned_rep_id` or `assigned_atp_id` reports to them (i.e. that person's `manager_id == auth.uid()`). Can write templates and manage users. Cannot write `payers` (BOSS only).
 - **ATP** — sees patients where they are `assigned_atp_id`, plus any patient where they are `assigned_rep_id` (the solo case). No manager-level rollup.
 - **REP** — sees patients where they are `assigned_rep_id`, OR (for the solo case) `assigned_atp_id`.
 
-Tasks inherit their parent patient's visibility via an `EXISTS` subquery in the `tasks_visible` / `tasks_writable` policies. `app_users` is readable by all authenticated users (needed for assignee dropdowns and "who reports to whom" rollups).
+Tasks inherit their parent patient's visibility via an `EXISTS` subquery in the `tasks_visible` / `tasks_writable` policies. Inactive users can read only their own profile. Active users can read profiles for assignee dropdowns and reporting rollups. Direct `app_users` updates are disabled; `update_app_user()` allows BOSS/MANAGER to manage anyone and ATPs to maintain pure REP accounts.
 
 ### Helper functions — and why `security definer`
 
@@ -258,7 +261,7 @@ Policies alone can't enforce this gate because RLS controls *whether the row is 
 
 ---
 
-## 9. Next-step + dashboard priority algorithm
+## 9. Next-step + dashboard queue algorithm
 
 Both implemented in `src/lib/queries.ts`.
 
@@ -269,17 +272,24 @@ Both implemented in `src/lib/queries.ts`.
 2. Sort ascending by `order_index`.
 3. Return the first one (or `null` if the patient is done).
 
-`fetchDashboardTasks` also populates `patient.next_step_label` per row by iterating visible tasks once and keeping the lowest-order non-APPROVED required task's label per `patient_id`.
+`fetchDashboardTasks` also populates `patient.next_step_label` from the same lowest-order required open task per patient.
 
 ### Dashboard sort
 
-`fetchDashboardTasks` fetches every non-`APPROVED` task the user can see (RLS filters automatically), joins to the parent patient + payer, then sorts in JS:
+`fetchDashboardTasks` fetches every visible task (RLS filters automatically), joins to the parent patient + payer, computes patient context, filters out `APPROVED` rows for display, then sorts in JS by a queue score. The score is deliberately not shown in the UI; it is just the operating logic for "what should this person do next?"
 
-1. `priority` ascending, nulls last (lower number = higher priority).
-2. `due_date` ascending, nulls last (so overdue floats to top because past dates are smaller numbers).
-3. `order_index` ascending (the natural checklist order).
+Signals in the score:
 
-The Postgres query also pre-orders by `priority` for cheap initial ordering, but the JS sort is the authoritative comparator.
+- Days overdue.
+- Blocked tasks.
+- Tasks awaiting external parties (`DOCTOR`, `PT`, `FRONT_DESK`).
+- `DONE_PENDING_REVIEW` tasks that require ATP review.
+- Patients near submission / completion.
+- The patient's true next required workflow step.
+- Manual `priority` as a bump, not as the whole sort.
+- Small workflow-order penalty so later tasks do not dominate earlier work without a reason.
+
+Ties fall back to due date and then `order_index`. Tune the weights in `QUEUE_WEIGHTS` in `src/lib/queries.ts`.
 
 ---
 
@@ -289,7 +299,7 @@ The Postgres query also pre-orders by `priority` for cheap initial ordering, but
 2. **User clicks "Sign in with Microsoft"** → `LoginForm.oauth("azure")` → `supabase.auth.signInWithOAuth({ provider: "azure", options: { redirectTo: ".../auth/callback?next=..." } })`. The browser is redirected to Microsoft.
 3. **Microsoft redirects back** to `http://localhost:54321/auth/v1/callback` (Supabase Auth), which finishes the OAuth handshake and then redirects to **`/auth/callback`** in our Next app with a `?code=` parameter.
 4. **`src/app/auth/callback/route.ts`** runs `supabase.auth.exchangeCodeForSession(code)`, which writes the session into the response cookies. It then redirects to the `next` query param (default `/`).
-5. **Trigger `on_auth_user_created`** (defined in `0001_init.sql`) fires on the insert into `auth.users` and creates a matching `app_users` row with `roles = ['REP']`, `active = false`. An admin (BOSS/MANAGER) then promotes/activates them.
+5. **Trigger `on_auth_user_created`** (defined in `0001_init.sql`) fires on the insert into `auth.users` and creates a matching `app_users` row with `roles = ['REP']`, `active = false`. A BOSS/MANAGER can promote/activate anyone; an ATP can maintain pure REP accounts.
 6. **`src/proxy.ts`** runs on every non-`/api`, non-static request. It calls `supabase.auth.getUser()`, which validates the cookie and (importantly) refreshes it via the cookie adapter when needed. If the user isn't signed in and the path isn't public (`/login`, `/auth/*`, `/_next/*`, `/favicon.ico`), it redirects to `/login?next=<path>`. If the user IS signed in and is on `/login`, it redirects to `/`.
 7. **Server components** call `requireUser()` from `src/lib/server-helpers.ts`, which fetches the `app_users` profile. If the trigger somehow failed, it returns a minimal in-memory placeholder with `roles: ['REP']`, `active: false` so the page still renders (the layout shows a "awaiting activation" banner).
 8. **Sign out** is a `POST /auth/signout` form (in `(app)/layout.tsx`) that calls `supabase.auth.signOut()` and redirects to `/login`.
@@ -318,9 +328,9 @@ npm run dev
 
 The seed creates 5 dev users with password `password123`. The `.gitignore` excludes `.env*`, so your secrets stay local.
 
-### Synthetic-data-only on the free tier
+### Synthetic-data-only before AWS hardening
 
-Supabase's free + Pro tiers are **not** HIPAA-eligible. Until the project is on the HIPAA-tier plan AND a BAA is signed (see §16), this app must only see synthetic / fake patient data — exactly what `seed.sql` provides. Don't load anything real until production cutover.
+The hosted Supabase project is temporary and synthetic-only. Until the AWS deployment has the controls in §16, this app must only see fake patient data — exactly what `seed.sql` provides. Don't load anything real until production cutover.
 
 ---
 
@@ -415,16 +425,16 @@ Explicit non-goals, all to keep v1 cheap, fast to ship, and free of HIPAA-tier i
 
 ## 16. Going to production
 
-When v1 graduates from "synthetic demo" to "real patients":
+When v1 graduates from "synthetic demo" to "real patients", use the AWS path:
 
-1. **Upgrade Supabase to the HIPAA-eligible plan** (currently the Team or Enterprise tier — verify pricing in the dashboard before quoting). HIPAA requires the higher-tier project plus the HIPAA add-on.
-2. **Mark the project as high-compliance** in the Supabase dashboard. This locks down certain features (e.g. logging) to be HIPAA-safe.
-3. **Sign the BAA** with Supabase. Until this is countersigned, no real PHI may enter the system.
-4. **Repeat the same migrations.** The `supabase/migrations/` folder + `supabase db push --linked` migrates the schema forward; production uses the same Postgres so nothing changes structurally.
-5. **Do NOT load `seed.sql` in production.** It writes fake patients and dev users with `password123`. Production seeds (real payer rows, real `task_templates`) should go in a separate migration that is explicitly intended for prod.
-6. **Same applies to any future provider**: if storage (S3, etc.) is added for documents, the BAA must extend to that provider too.
+1. **Self-host Supabase on AWS EC2** in `us-west-2` with encrypted EBS, restricted security groups, and no public Postgres port.
+2. **Deploy Next.js to AWS Amplify** with env vars pointed at the self-hosted Supabase URL and keys.
+3. **Repeat the same migrations** against the self-hosted Postgres. Do not load demo patients or password users in production.
+4. **Configure Microsoft/Azure OAuth** in GoTrue and disable dev email/password before real users enter PHI.
+5. **Complete HIPAA-relevant hardening before real data**: AWS BAA, encrypted backups, audit logging, CloudTrail, OS patching, access-key rotation, and breach-response documentation.
+6. **Same applies to any future provider**: if storage, notifications, or documents are added, that provider also needs the right BAA and controls.
 
-Until all of the above is true, this project sees synthetic data only.
+Until the AWS controls are in place, this project sees synthetic data only.
 
 ## gstack (REQUIRED — global install)
 

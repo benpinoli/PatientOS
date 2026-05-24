@@ -3,6 +3,20 @@ import type { Task, Patient, AppUser } from "@/lib/db-types";
 
 type SB = SupabaseClient;
 
+const EXTERNAL_WAITING_ROLES = new Set(["DOCTOR", "PT", "FRONT_DESK"]);
+
+const QUEUE_WEIGHTS = {
+  overduePerDay: 100,
+  blocked: 80,
+  externalPartyWaiting: 50,
+  pendingAtpReview: 45,
+  nearSubmission: 35,
+  patientNextStep: 30,
+  manualPriorityBase: 70,
+  manualPriorityStep: 5,
+  workflowOrderPenalty: 0.25,
+};
+
 // Patient + tasks bundle for the dashboard. RLS does the filtering for us —
 // any patient that comes back is one the current user is allowed to see.
 export type DashboardRow = Task & {
@@ -28,92 +42,97 @@ export type DashboardBundle = {
   allPatients: DashboardPatientGroup[];
 };
 
+type RawDashboardTask = Task & {
+  patient: {
+    id: string;
+    external_code: string | null;
+    first_name: string;
+    last_name: string;
+    payer_id: string;
+    created_at: string;
+    payer: { name: string } | null;
+  };
+};
+
+type PatientQueueContext = {
+  nextStepId: string | null;
+  nextStepLabel: string | null;
+  requiredCount: number;
+  approvedRequiredCount: number;
+};
+
 export async function fetchDashboardTasks(supabase: SB): Promise<DashboardRow[]> {
-  // Pull all tasks + their parents in one trip. RLS filters tasks at the row level.
-  const { data: tasks, error } = await supabase
-    .from("tasks")
-    .select(
-      `
-      *,
-      patient:patients!inner (
-        id, external_code, first_name, last_name, payer_id, created_at,
-        payer:payers ( name )
-      )
-      `,
+  const { data: tasks, error } = await supabase.from("tasks").select(
+    `
+    *,
+    patient:patients!inner (
+      id, external_code, first_name, last_name, payer_id, created_at,
+      payer:payers ( name )
     )
-    .neq("status", "APPROVED");
+    `,
+  );
 
   if (error) throw error;
 
-  // Compute next step per patient (lowest order_index where status != APPROVED).
-  // We have all visible tasks in hand, so do it in-process.
-  const allTasks = tasks ?? [];
+  const allTasks = (tasks ?? []) as unknown as RawDashboardTask[];
+  const contextByPatient = buildPatientQueueContext(allTasks);
 
-  type RawTask = Task & {
-    patient: {
-      id: string;
-      external_code: string | null;
-      first_name: string;
-      last_name: string;
-      payer_id: string;
-      created_at: string;
-      payer: { name: string } | null;
-    };
-  };
+  const rows: DashboardRow[] = allTasks
+    .filter((t) => t.status !== "APPROVED")
+    .map((t) => {
+      const context = contextByPatient.get(t.patient.id);
+      return {
+        ...t,
+        patient: {
+          id: t.patient.id,
+          external_code: t.patient.external_code,
+          first_name: t.patient.first_name,
+          last_name: t.patient.last_name,
+          payer_id: t.patient.payer_id,
+          created_at: t.patient.created_at,
+          payer_name: t.patient.payer?.name,
+          next_step_label: context?.nextStepLabel ?? null,
+        },
+      };
+    });
 
-  const nextStepByPatient = new Map<string, string>();
-  for (const t of allTasks as unknown as RawTask[]) {
-    if (!t.required) continue;
-    if (t.status === "APPROVED") continue;
-    const cur = nextStepByPatient.get(t.patient_id);
-    if (cur === undefined) {
-      nextStepByPatient.set(t.patient_id, t.label);
-    }
-    // We rely on the patient-level ordering done separately below.
-  }
-
-  const rows: DashboardRow[] = (allTasks as unknown as RawTask[]).map((t) => ({
-    ...t,
-    patient: {
-      id: t.patient.id,
-      external_code: t.patient.external_code,
-      first_name: t.patient.first_name,
-      last_name: t.patient.last_name,
-      payer_id: t.patient.payer_id,
-      created_at: t.patient.created_at,
-      payer_name: t.patient.payer?.name,
-      next_step_label: nextStepByPatient.get(t.patient.id) ?? null,
-    },
-  }));
-
-  return rows;
+  return sortIntelligentQueue(rows, contextByPatient);
 }
 
-function sortFifoQueue(rows: DashboardRow[]): DashboardRow[] {
+function sortIntelligentQueue<T extends Task>(
+  rows: T[],
+  contextByPatient: Map<string, PatientQueueContext>,
+): T[] {
   return [...rows].sort((a, b) => {
-    const ca = new Date(a.patient.created_at).getTime();
-    const cb = new Date(b.patient.created_at).getTime();
-    if (ca !== cb) return ca - cb;
+    const contextA = contextByPatient.get(a.patient_id);
+    const contextB = contextByPatient.get(b.patient_id);
+    const scoreA = scoreDashboardTask(a, contextA);
+    const scoreB = scoreDashboardTask(b, contextB);
+    if (scoreA !== scoreB) return scoreB - scoreA;
+
+    const da = a.due_date ? new Date(a.due_date).getTime() : Number.POSITIVE_INFINITY;
+    const db = b.due_date ? new Date(b.due_date).getTime() : Number.POSITIVE_INFINITY;
+    if (da !== db) return da - db;
+
     return a.order_index - b.order_index;
   });
 }
 
 export async function fetchDashboardBundle(supabase: SB): Promise<DashboardBundle> {
-  const rows = sortFifoQueue(await fetchDashboardTasks(supabase));
+  const rows = await fetchDashboardTasks(supabase);
   const topFive = rows.slice(0, 5);
 
-  const [{ data: patients }, { data: openTasks }] = await Promise.all([
-    supabase
-      .from("patients")
-      .select(
-        `
-        id, external_code, first_name, last_name, payer_id, created_at,
-        payer:payers ( name )
+  const { data: patients, error } = await supabase
+    .from("patients")
+    .select(
+      `
+      id, external_code, first_name, last_name, payer_id, created_at,
+      payer:payers ( name )
       `,
-      )
-      .order("created_at", { ascending: true }),
-    supabase.from("tasks").select("*").neq("status", "APPROVED").order("order_index"),
-  ]);
+    )
+    .order("created_at", { ascending: true });
+
+  if (error) throw error;
 
   type PatientRow = {
     id: string;
@@ -126,10 +145,10 @@ export async function fetchDashboardBundle(supabase: SB): Promise<DashboardBundl
   };
 
   const tasksByPatient = new Map<string, Task[]>();
-  for (const t of (openTasks ?? []) as Task[]) {
-    const list = tasksByPatient.get(t.patient_id) ?? [];
-    list.push(t);
-    tasksByPatient.set(t.patient_id, list);
+  for (const row of rows) {
+    const list = tasksByPatient.get(row.patient_id) ?? [];
+    list.push(row);
+    tasksByPatient.set(row.patient_id, list);
   }
 
   const allPatients: DashboardPatientGroup[] = (patients ?? []).map((p) => {
@@ -156,6 +175,80 @@ export function isPatientAssignedToUser(
   userId: string,
 ) {
   return patient.assigned_rep_id === userId || patient.assigned_atp_id === userId;
+}
+
+function buildPatientQueueContext(tasks: RawDashboardTask[]) {
+  const contextByPatient = new Map<string, PatientQueueContext>();
+  const requiredTasksByPatient = new Map<string, RawDashboardTask[]>();
+
+  for (const task of tasks) {
+    if (!task.required) continue;
+    const existing = requiredTasksByPatient.get(task.patient_id) ?? [];
+    existing.push(task);
+    requiredTasksByPatient.set(task.patient_id, existing);
+  }
+
+  for (const [patientId, requiredTasks] of requiredTasksByPatient) {
+    const ordered = [...requiredTasks].sort((a, b) => a.order_index - b.order_index);
+    const nextStep = ordered.find((task) => task.status !== "APPROVED") ?? null;
+    contextByPatient.set(patientId, {
+      nextStepId: nextStep?.id ?? null,
+      nextStepLabel: nextStep?.label ?? null,
+      requiredCount: ordered.length,
+      approvedRequiredCount: ordered.filter((task) => task.status === "APPROVED").length,
+    });
+  }
+
+  return contextByPatient;
+}
+
+function scoreDashboardTask(task: Task, context?: PatientQueueContext) {
+  let score = 0;
+
+  const overdueDays = daysOverdue(task.due_date);
+  if (overdueDays > 0) {
+    score += overdueDays * QUEUE_WEIGHTS.overduePerDay;
+  }
+
+  if (task.status === "BLOCKED") {
+    score += QUEUE_WEIGHTS.blocked;
+  }
+
+  if (EXTERNAL_WAITING_ROLES.has(task.responsible_role)) {
+    score += QUEUE_WEIGHTS.externalPartyWaiting;
+  }
+
+  if (task.status === "DONE_PENDING_REVIEW" && task.requires_atp_review) {
+    score += QUEUE_WEIGHTS.pendingAtpReview;
+  }
+
+  if (context && context.requiredCount > 0) {
+    const completionRatio = context.approvedRequiredCount / context.requiredCount;
+    if (completionRatio >= 0.7) {
+      score += QUEUE_WEIGHTS.nearSubmission;
+    }
+    if (context.nextStepId === task.id) {
+      score += QUEUE_WEIGHTS.patientNextStep;
+    }
+  }
+
+  if (task.priority != null) {
+    score += Math.max(
+      QUEUE_WEIGHTS.manualPriorityBase - task.priority * QUEUE_WEIGHTS.manualPriorityStep,
+      1,
+    );
+  }
+
+  score -= task.order_index * QUEUE_WEIGHTS.workflowOrderPenalty;
+  return score;
+}
+
+function daysOverdue(dueDate: string | null) {
+  if (!dueDate) return 0;
+  const due = new Date(dueDate + "T00:00:00");
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.max(0, Math.floor((today.getTime() - due.getTime()) / 86_400_000));
 }
 
 export async function fetchPatientWithTasks(supabase: SB, patientId: string) {

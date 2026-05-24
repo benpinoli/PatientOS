@@ -23,9 +23,9 @@ see [`CLAUDE.md`](./CLAUDE.md).
 - **Tailwind CSS 4**
 - Auth via Microsoft (Azure AD / Entra) OAuth by default; providers are
   config-driven (see `src/lib/auth-providers.ts`).
-- Intended deployment: **Vercel** for the Next.js app, **Supabase** for
-  data + auth. The Next.js app talks to Supabase over HTTPS — they are
-  different layers, not alternatives.
+- Intended deployment: **AWS Amplify** for the Next.js app, pointed at
+  **self-hosted Supabase on AWS EC2** for data + auth. The current hosted
+  Supabase project is a temporary synthetic-data backend only.
 
 ---
 
@@ -68,7 +68,7 @@ This runs every file in `supabase/migrations/` in order and then
 - 3 payers (Medicare, Nevada Medicaid, Anthem BCBS)
 - The Medicaid Group 3 strawman task templates (+ stubs for Medicare and
   commercial)
-- 6 fake patients with tasks in varied states (not started, in progress,
+- 9 fake patients with tasks in varied states (not started, in progress,
   pending ATP review, blocked, fully approved) so every dashboard pivot
   has something interesting on it
 
@@ -93,9 +93,11 @@ different users to see the visibility model in action.
 | `supabase/migrations/0001_init.sql` | All 5 tables + the auth-user → app-user trigger |
 | `supabase/migrations/0002_rls.sql` | RLS helpers + per-table policies |
 | `supabase/migrations/0003_approve_gate.sql` | Server-side enforcement of the ATP review gate |
-| `supabase/seed.sql` | Synthetic users + payers + task templates + 6 patients |
+| `supabase/migrations/0004_supervising_atp.sql` | Default ATP supervisor relationship on users |
+| `supabase/migrations/0005_harden_user_and_patient_workflows.sql` | Hardened user admin RPCs + atomic patient/task creation |
+| `supabase/seed.sql` | Synthetic users + payers + task templates + 9 patients |
 | `src/app/login/` | Provider-agnostic login screen |
-| `src/app/(app)/page.tsx` | Aggregated dashboard with priority queue |
+| `src/app/(app)/page.tsx` | Intelligence-sorted dashboard queue + patient task groups |
 | `src/app/(app)/patients/[id]/page.tsx` | Patient detail w/ computed next step |
 | `src/app/(app)/patients/new/page.tsx` | New-patient form (instantiates the task list) |
 | `src/app/(app)/admin/page.tsx` | Activate users, set roles + manager hierarchy |
@@ -107,17 +109,12 @@ different users to see the visibility model in action.
 
 ## Going to production
 
-Local dev runs on the Supabase **free tier with synthetic data only**.
-Before any real patient data is entered:
-
-1. Upgrade Supabase to the paid HIPAA plan.
-2. Enable HIPAA on the Supabase org, mark the production project
-   high-compliance.
-3. Sign the BAA.
-4. Wire Azure AD / Entra OAuth credentials in production env vars.
-
-The schema migrates forward unchanged — it's the same Postgres on either
-side.
+Local dev and the temporary hosted Supabase project use **synthetic data
+only**. Real patient data belongs only on the AWS deployment after the
+HIPAA-relevant controls are in place: AWS BAA, encrypted EBS, restricted
+network access, backups, audit logging, OS patching, and documented breach
+response. The planned production shape is AWS Amplify for Next.js plus the
+open-source Supabase stack on EC2.
 
 ---
 

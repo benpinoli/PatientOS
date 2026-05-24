@@ -97,8 +97,8 @@ export default async function DashboardPage() {
         <div>
           <h1 className="text-xl font-semibold text-zinc-900">Top 5 tasks</h1>
           <p className="text-sm text-zinc-500">
-            Oldest patients first in the queue, then checklist order. Same tasks may appear
-            again under each patient below.
+            Sorted by urgency, blockers, due dates, and case progress. Same tasks
+            may appear again under each patient below.
           </p>
         </div>
         <TaskQueueTable rows={topFive} />

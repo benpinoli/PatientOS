@@ -53,92 +53,26 @@ export async function createPatient(form: FormData) {
   const referral_source = (form.get("referral_source") as string)?.trim() || null;
   const payer_id = form.get("payer_id") as string;
   const assigned_rep_id = (form.get("assigned_rep_id") as string) || null;
-  let assigned_atp_id = (form.get("assigned_atp_id") as string) || null;
+  const assigned_atp_id = (form.get("assigned_atp_id") as string) || null;
 
   if (!first_name || !last_name || !payer_id) {
     throw new Error("first_name, last_name, and payer_id are required");
   }
 
-  // If the form didn't supply an ATP, derive one from the rep's user row:
-  // ATP-credentialed reps are their own ATP; non-ATP reps use their
-  // supervising_atp_id. Patient still requires SOME ATP at the end.
-  if (!assigned_atp_id && assigned_rep_id) {
-    const { data: rep } = await supabase
-      .from("app_users")
-      .select("id, roles, supervising_atp_id")
-      .eq("id", assigned_rep_id)
-      .maybeSingle();
-    if (rep) {
-      if (Array.isArray(rep.roles) && rep.roles.includes("ATP")) {
-        assigned_atp_id = rep.id;
-      } else if (rep.supervising_atp_id) {
-        assigned_atp_id = rep.supervising_atp_id;
-      }
-    }
-  }
-
-  if (!assigned_atp_id) {
-    throw new Error(
-      "no ATP could be assigned — the selected rep has no supervising_atp_id set; ask an admin to assign one",
-    );
-  }
-
-  // Find the payer to learn its type (which templates to instantiate).
-  const { data: payer, error: pErr } = await supabase
-    .from("payers")
-    .select("id, type")
-    .eq("id", payer_id)
-    .maybeSingle();
-  if (pErr || !payer) throw new Error("payer not found");
-
-  // Insert the patient
-  const { data: inserted, error: insErr } = await supabase
-    .from("patients")
-    .insert({
-      first_name,
-      last_name,
-      external_code,
-      referral_source,
-      payer_id,
-      assigned_rep_id,
-      assigned_atp_id,
-      status: "ACTIVE",
-    })
-    .select()
-    .single();
-  if (insErr || !inserted) throw new Error(insErr?.message ?? "patient insert failed");
-
-  // Compute the default due date = today + DEFAULT_DUE_DAYS, as an ISO date string.
-  const dueDate = new Date();
-  dueDate.setDate(dueDate.getDate() + DEFAULT_DUE_DAYS);
-  const dueDateISO = dueDate.toISOString().slice(0, 10);
-
-  // Pull matching templates and instantiate tasks (snapshotting fields).
-  const { data: templates, error: tErr } = await supabase
-    .from("task_templates")
-    .select("*")
-    .eq("payer_type", payer.type)
-    .order("default_order");
-  if (tErr) throw new Error(tErr.message);
-
-  if (templates && templates.length > 0) {
-    const taskRows = templates.map((t) => ({
-      patient_id: inserted.id,
-      template_id: t.id,
-      label: t.label,
-      responsible_role: t.responsible_role,
-      requires_atp_review: t.requires_atp_review,
-      required: t.required,
-      order_index: t.default_order,
-      status: "NOT_STARTED" as const,
-      due_date: dueDateISO,
-    }));
-    const { error: tInsErr } = await supabase.from("tasks").insert(taskRows);
-    if (tInsErr) throw new Error(tInsErr.message);
-  }
+  const { data: patientId, error } = await supabase.rpc("create_patient_with_tasks", {
+    p_first_name: first_name,
+    p_last_name: last_name,
+    p_external_code: external_code,
+    p_referral_source: referral_source,
+    p_payer_id: payer_id,
+    p_assigned_rep_id: assigned_rep_id,
+    p_assigned_atp_id: assigned_atp_id,
+    p_default_due_days: DEFAULT_DUE_DAYS,
+  });
+  if (error || !patientId) throw new Error(error?.message ?? "patient creation failed");
 
   revalidatePath("/", "layout");
-  redirect(`/patients/${inserted.id}`);
+  redirect(`/patients/${patientId}`);
 }
 
 // =====================================================================
@@ -157,7 +91,15 @@ export async function updateUser(
   },
 ) {
   const supabase = await getSupabaseServer();
-  const { error } = await supabase.from("app_users").update(patch).eq("id", userId);
+  const { error } = await supabase.rpc("update_app_user", {
+    p_user_id: userId,
+    p_roles: patch.roles ?? null,
+    p_manager_id: patch.manager_id ?? null,
+    p_supervising_atp_id: patch.supervising_atp_id ?? null,
+    p_active: patch.active ?? null,
+    p_location: patch.location ?? null,
+    p_full_name: patch.full_name ?? null,
+  });
   if (error) throw new Error(error.message);
   revalidatePath("/admin");
 }

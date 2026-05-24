@@ -39,10 +39,34 @@ export function NewPatientForm({
 
   const [repId, setRepId] = useState<string>(currentUserId);
   const [atpId, setAtpId] = useState<string>(defaultAtpForRep(currentUserId));
+  const [atpSearch, setAtpSearch] = useState<string>(() => {
+    const initialAtp = userById.get(defaultAtpForRep(currentUserId));
+    return initialAtp?.full_name ?? initialAtp?.email ?? "";
+  });
 
   const onRepChange = (next: string) => {
+    const nextAtpId = defaultAtpForRep(next);
+    const nextAtp = userById.get(nextAtpId);
     setRepId(next);
-    setAtpId(defaultAtpForRep(next));
+    setAtpId(nextAtpId);
+    setAtpSearch(nextAtp?.full_name ?? nextAtp?.email ?? "");
+  };
+
+  const selectedRep = userById.get(repId);
+  const selectedAtp = userById.get(atpId);
+  const repIsAtp = selectedRep?.roles?.includes("ATP") ?? false;
+  const atpMatches = atps.filter((u) => {
+    const needle = atpSearch.trim().toLowerCase();
+    if (!needle) return true;
+    return [u.full_name, u.email, u.location]
+      .filter(Boolean)
+      .some((value) => value!.toLowerCase().includes(needle));
+  });
+
+  const chooseAtp = (id: string) => {
+    const nextAtp = userById.get(id);
+    setAtpId(id);
+    setAtpSearch(nextAtp?.full_name ?? nextAtp?.email ?? "");
   };
 
   const repHasNoAtp = repId !== "" && atpId === "";
@@ -84,24 +108,58 @@ export function NewPatientForm({
 
       <label className="block">
         <span className="text-xs font-medium text-zinc-700">
-          Assigned ATP{" "}
-          <span className="font-normal text-zinc-400">
-            (auto-filled from rep; override only if you really need to)
-          </span>
+          Assigned ATP
         </span>
-        <select
-          name="assigned_atp_id"
-          value={atpId}
-          onChange={(e) => setAtpId(e.target.value)}
-          className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm"
-        >
-          <option value="">— unassigned —</option>
-          {atps.map((u) => (
-            <option key={u.id} value={u.id}>
-              {u.full_name}
-            </option>
-          ))}
-        </select>
+        <input type="hidden" name="assigned_atp_id" value={atpId} />
+        {repIsAtp ? (
+          <div className="mt-1 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-700">
+            {selectedRep?.full_name ?? selectedRep?.email} (self)
+          </div>
+        ) : (
+          <div className="mt-1 space-y-2">
+            <input
+              type="search"
+              value={atpSearch}
+              onChange={(e) => {
+                setAtpSearch(e.target.value);
+                setAtpId("");
+              }}
+              placeholder="Search active ATPs..."
+              className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
+            />
+            <div className="max-h-36 overflow-auto rounded-md border border-zinc-200 bg-white">
+              {atpMatches.map((u) => {
+                const selected = u.id === atpId;
+                return (
+                  <button
+                    key={u.id}
+                    type="button"
+                    onClick={() => chooseAtp(u.id)}
+                    className={
+                      "flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-zinc-50 " +
+                      (selected ? "bg-zinc-900 text-white hover:bg-zinc-800" : "text-zinc-700")
+                    }
+                  >
+                    <span>{u.full_name ?? u.email}</span>
+                    {u.location && (
+                      <span className={selected ? "text-zinc-200" : "text-zinc-400"}>
+                        {u.location}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+              {atpMatches.length === 0 && (
+                <div className="px-3 py-2 text-sm text-zinc-400">No active ATPs found.</div>
+              )}
+            </div>
+            {selectedAtp && (
+              <p className="text-xs text-zinc-500">
+                Selected: {selectedAtp.full_name ?? selectedAtp.email}
+              </p>
+            )}
+          </div>
+        )}
         {repHasNoAtp && (
           <p className="mt-1 text-xs text-amber-700">
             This rep has no supervising ATP set. Pick one manually, or ask an

@@ -1,8 +1,26 @@
 # Handoff — paste this into your Claude conversation
 
-**Status as of 2026-05-23.** Project is mid-pivot. App works end-to-end against a hosted Supabase backend; we're about to migrate the backend off of managed Supabase onto self-hosted Supabase on AWS. Next.js front-end will deploy to AWS Amplify.
+**Status as of 2026-05-23 (evening).** Project is mid-pivot. App works end-to-end against a hosted Supabase backend; we're about to migrate the backend off of managed Supabase onto self-hosted Supabase on AWS. Next.js front-end will deploy to AWS Amplify. Two recent feature changes (ATP supervisor relationship + default 14-day due dates) have shipped on `build/v1-tracker`.
 
 Read this whole file in your first conversation so your Claude has the full picture. Companion files in the repo: `README.md`, `ARCHITECTURE.md`, `CLAUDE.md` (the persistent context pack — read that second).
+
+---
+
+## What changed since 2026-05-23 morning (delta from prior handoff)
+
+Two feature changes have landed on `build/v1-tracker`. Both are also already applied to the production Supabase database at `ftxxexwzrhyrqjguagbi.supabase.co` (migration applied, seed values backfilled, NULL due_dates on existing tasks filled in too).
+
+1. **Rep → ATP supervisor relationship.** New column `app_users.supervising_atp_id` (FK → `app_users.id`, nullable, `on delete set null`). Non-ATP reps point at their default ATP supervisor; ATP-credentialed users keep it `NULL` (they are their own ATP). The new-patient form auto-fills `assigned_atp_id` from the selected rep (rep is ATP → rep themselves; rep is not ATP → rep's supervising_atp_id). `createPatient` server action does the same computation as a safety net and errors loudly if no ATP can be derived. Admin UI gained an **"ATP supervisor"** column. Seed: Tara → Steve, Jack → Matt.
+   - Migration: `supabase/migrations/0004_supervising_atp.sql`
+   - Memory file: `rep-supervisor-atp.md` (in Addison's local Claude memory dir)
+
+2. **Default 14-day due dates.** New constant `DEFAULT_DUE_DAYS = 14` in `src/lib/constants.ts`. `createPatient` stamps every instantiated task with `due_date = today + DEFAULT_DUE_DAYS`. Seed instantiation mirrors this with `patient.created_at::date + 14`. Remote DB tasks that previously had NULL `due_date` were backfilled.
+
+3. **gstack hook added.** A PreToolUse hook fires on `Skill` invocations (`.claude/settings.json` + `.claude/hooks/check-gstack.sh`). It blocks skill usage unless `~/.claude/skills/gstack/bin` exists. CLAUDE.md was updated with a "gstack REQUIRED" section. This is an intentional decision made by Addison or his partner — don't investigate or revisit it. If you hit a "gstack missing" block, follow the install instructions or ask Addison.
+
+4. **`AppUser` type updated.** `src/lib/db-types.ts` now includes `supervising_atp_id: string | null`. The `updateUser` server action accepts it.
+
+5. **Security/workflow hardening added locally after the AWS infra pull.** New migration `supabase/migrations/0005_harden_user_and_patient_workflows.sql` removes broad direct `app_users` self-update, adds active-user checks, exposes guarded `update_app_user()` for BOSS/MANAGER plus ATP-on-pure-REP maintenance, and moves new-patient creation into `create_patient_with_tasks()` so patient + task rows commit atomically. Dashboard ordering now uses a quiet queue score instead of pure FIFO/manual priority.
 
 ---
 
@@ -22,14 +40,15 @@ The customer (Choice) doesn't currently pay for the dev work; we're doing it for
 ## Where we are right now
 
 ✅ **Done:**
-- Schema: 5 tables (`app_users`, `payers`, `patients`, `task_templates`, `tasks`) + RLS policies + ATP-review-gate trigger. Migrations are in `supabase/migrations/`. Working on hosted Supabase at `https://ftxxexwzrhyrqjguagbi.supabase.co`.
-- Seed: 5 demo users (DeAnne / Matt / Steve / Tara / Jack, all `password123`), 3 payers, all template rows, 9 patients with varied states. In `supabase/seed.sql`.
-- Next.js front-end: login, dashboard with priority queue, patient list, patient detail with computed next-step, new-patient form (instantiates tasks), admin screen for user activation + roles. App passes `npx tsc --noEmit` and `npx next build`.
+- Schema: 5 tables (`app_users`, `payers`, `patients`, `task_templates`, `tasks`) + RLS policies + ATP-review-gate trigger + supervising_atp column. Migrations `0001_init.sql` → `0004_supervising_atp.sql` in `supabase/migrations/`. Working on hosted Supabase at `https://ftxxexwzrhyrqjguagbi.supabase.co`.
+- Seed: 5 demo users (DeAnne / Matt / Steve / Tara / Jack, all `password123`), 3 payers, all template rows, 9 patients with varied states, supervising_atp_id wired for Tara → Steve and Jack → Matt. In `supabase/seed.sql`.
+- Next.js front-end: login, dashboard with priority queue, patient list, patient detail with computed next-step, **reactive** new-patient form (rep selection auto-fills ATP), admin screen for user activation + roles + ATP supervisor. App passes `npx tsc --noEmit` and `npx next build`.
+- Default 14-day due dates wired into both server-action and seed-side task instantiation.
 - Local dev: works at `localhost:3000`. `npm run dev` boots Next, talks to hosted Supabase.
-- Pushed to GitHub: `https://github.com/benpinoli/Choice-Healthcare-Task-System` on both `build/v1-tracker` and `main` branches.
+- Pushed to GitHub: `https://github.com/benpinoli/Choice-Healthcare-Task-System`. Active branch: `build/v1-tracker`. `main` has the prior handoff commit but not the two new feature commits until they're pushed.
 
 🟡 **In progress / next:**
-- Self-host Supabase on AWS (EC2 + Docker Compose, us-west-2).
+- Self-host Supabase on AWS (EC2 + Docker Compose, us-west-2). **Addison's partner is currently working on the EC2 setup.**
 - Deploy Next.js to AWS Amplify pointed at the new Supabase URL.
 - After cutover, retire the managed Supabase project.
 
@@ -71,41 +90,57 @@ The customer can't fund $600-950/mo without seeing the product work first. Self-
 
 ## Domain rules you must internalize before writing code
 
-These are decisions / clarifications from the customer that override what the original spec said. Future code should respect them.
+These are decisions / clarifications from the customer that override what the original spec said. Future code should respect them. Memory files for each rule live in Addison's local Claude memory dir:
+`~/.claude/projects/-Users-addisonlewis-Documents-GitHub-Choice-Healthcare-Task-System/memory/`.
 
 ### 1. Managers carry direct caseloads.
 
 The org structure is NOT "managers manage, reps rep." Most everyone — including managers like Matt — works patients directly. Management is a minority slice; direct patient work is the dominant activity. When designing UI, don't push the team-rollup view at the expense of the user's own queue. Manager's primary view = their own work; team rollup = secondary.
 
-(Memory file in Addison's local Claude: `org-direct-patient-work.md`.)
+(Memory: `org-direct-patient-work.md`.)
 
 ### 2. ATP-credentialed reps handle ATP review on their own patients.
 
 If a rep has `ATP` in their `roles` array, they are the `assigned_atp_id` on their own patients — the "solo case" is the NORM for ATP-credentialed staff, not an edge case. ATPs don't farm out ATP review to other ATPs. A separate ATP is assigned ONLY when the rep is a pure REP (no ATP credential — e.g. Tara, Jack).
 
-In the new-patient form: if assigned rep has `ATP`, pre-fill `assigned_atp_id` to them. Otherwise leave blank for explicit pick.
+In the new-patient form (now reactive): if the selected rep has `ATP`, the ATP dropdown auto-fills to them; otherwise it auto-fills to their `supervising_atp_id`.
 
-(Memory file: `atp-self-handling.md`.)
+(Memory: `atp-self-handling.md`.)
 
-### 3. Supabase HIPAA isn't ~$25/mo, it's ~$600/mo.
+### 3. Non-ATP reps have a default ATP supervisor (new 2026-05-23).
+
+`app_users.supervising_atp_id` holds each non-ATP rep's default ATP signatory. Stored on the user row (not per-patient) because reps usually work with the same ATP across all their patients — and asking the user to re-pick every time was friction.
+
+Rules:
+- ATP-credentialed user → `supervising_atp_id` is NULL (they're their own ATP).
+- Pure REP → `supervising_atp_id` must point to an ATP-credentialed user. **Not enforced by DB constraint** — onboarding flexibility (a fresh rep may briefly exist with no supervisor yet). Enforced by the new-patient form and admin UI instead.
+- The approval-gate trigger does NOT look at `supervising_atp_id`. The supervisor is only a default for the patient-level `assigned_atp_id`; once a patient exists, the patient's `assigned_atp_id` is the source of truth for the gate.
+
+Seed: Tara → Steve (pure ATP); Jack → Matt (manager + ATP).
+
+(Memory: `rep-supervisor-atp.md`.)
+
+### 4. Supabase HIPAA isn't ~$25/mo, it's ~$600/mo.
 
 The Pro tier is $25 but the HIPAA add-on is ~$599. Quote the all-in figure in cost conversations. This number drove the AWS pivot.
 
-(Memory file: `supabase-hipaa-cost.md`.)
+(Memory: `supabase-hipaa-cost.md`.)
 
-### 4. Doctors / PTs / front-desk staff are NOT app users.
+### 5. Doctors / PTs / front-desk staff are NOT app users.
 
 The `tasks.responsible_role` field labels who needs to act in the real world (Doctor, PT, Rep, ATP, Front desk). Only the app users (REP/ATP/MANAGER/BOSS roles) have accounts. The column in the UI is labeled "Awaiting" (not "Owner") to make this clear — when a task shows `Awaiting: Doctor`, the rep's next action is to call the doctor's office, not to assign a doctor account.
 
-### 5. Never log PHI.
+### 6. Never log PHI.
 
 Patient names + payer info = PHI. Logs / error traces / analytics should reference IDs only, never names. The Supabase free tier in use today is explicitly synthetic data only — no real patient names in there.
 
-### 6. Snapshot template fields onto tasks at instantiation.
+### 7. Snapshot template fields onto tasks at instantiation.
 
 When creating a patient, we copy the matching `task_templates` rows into `tasks` rows and freeze `label`, `responsible_role`, `requires_atp_review`, `required`, `order_index`. Editing a template later does NOT rewrite in-flight tasks. This is intentional — patients in mid-pipeline don't get rug-pulled if someone reorders the checklist.
 
-### 7. Status flow + the ATP review gate.
+We now also stamp every new task with a `due_date` of `today + DEFAULT_DUE_DAYS` (= 14) at instantiation. Changing the constant later does NOT change due dates on previously-created tasks; same snapshot rule.
+
+### 8. Status flow + the ATP review gate.
 
 ```
 NOT_STARTED → IN_PROGRESS → [DONE_PENDING_REVIEW if requires_atp_review] → APPROVED
@@ -125,18 +160,27 @@ Read this section to know what file does what.
 ├── README.md                  # Project pitch + local dev quickstart
 ├── ARCHITECTURE.md            # System design overview with Mermaid ERD
 ├── CLAUDE.md                  # 400+ line orientation pack for Claude sessions — READ THIS SECOND
+│                              # (includes the gstack-required section at the bottom)
 ├── HANDOFF.md                 # This file
 ├── AGENTS.md                  # Next 16 != older Next reminder
 ├── .env.example               # Template for .env.local — secrets NOT committed
 ├── .env.local                 # ⚠ gitignored — get the values from Addison
+├── .claude/
+│   ├── settings.json          # Hooks config (PreToolUse → check-gstack.sh on Skill)
+│   └── hooks/
+│       └── check-gstack.sh    # Blocks Skill use unless ~/.claude/skills/gstack/bin exists
 ├── package.json, tsconfig.json, next.config.ts, postcss.config.mjs
 ├── supabase/
 │   ├── config.toml            # Local supabase CLI config (unused once we move to AWS)
 │   ├── seed.sql               # 5 users + payers + templates + 9 patients (synthetic only)
+│   │                          # Tara/Jack now get supervising_atp_id; tasks stamped with
+│   │                          # due_date = patient.created_at + 14
 │   └── migrations/
-│       ├── 0001_init.sql      # 5 tables, indexes, handle_new_auth_user trigger
-│       ├── 0002_rls.sql       # RLS helpers + per-table policies
-│       └── 0003_approve_gate.sql  # ATP review gate trigger
+│       ├── 0001_init.sql               # 5 tables, indexes, handle_new_auth_user trigger
+│       ├── 0002_rls.sql                # RLS helpers + per-table policies
+│       ├── 0003_approve_gate.sql       # ATP review gate trigger
+│       ├── 0004_supervising_atp.sql    # adds app_users.supervising_atp_id
+│       └── 0005_harden_user_and_patient_workflows.sql # RPC hardening + atomic create
 └── src/
     ├── proxy.ts               # Cookie refresh + auth gate (Next 16 proxy convention)
     ├── app/
@@ -153,17 +197,25 @@ Read this section to know what file does what.
     │       ├── page.tsx       # Dashboard: priority queue across all visible tasks
     │       ├── actions.ts     # Server actions: updateTaskStatus, updateTaskFields,
     │       │                  #                 createPatient, updateUser
+    │       │                  #   createPatient now: (a) derives assigned_atp_id from rep
+    │       │                  #   if not supplied, (b) errors if no ATP can be derived,
+    │       │                  #   (c) stamps every task with due_date = today + 14.
+    │       │                  #   updateUser accepts supervising_atp_id.
     │       ├── TaskActions.tsx # Client: inline status / priority / link / due-date editor
     │       ├── patients/
-    │       │   ├── page.tsx           # Patient list (RLS filters visibility)
-    │       │   ├── new/page.tsx       # New-patient form (auto-instantiates tasks)
-    │       │   └── [id]/page.tsx      # Patient detail w/ computed next-step
+    │       │   ├── page.tsx                # Patient list (RLS filters visibility)
+    │       │   ├── new/
+    │       │   │   ├── page.tsx            # Server component: loads payers + users,
+    │       │   │   │                       # renders NewPatientForm
+    │       │   │   └── NewPatientForm.tsx  # NEW: client component, reactive rep → ATP fill
+    │       │   └── [id]/page.tsx           # Patient detail w/ computed next-step
     │       └── admin/
-    │           ├── page.tsx           # User activation + roles + read-only templates
-    │           └── AdminUserRow.tsx   # Client: per-user editor
+    │           ├── page.tsx                # User activation + roles + ATP supervisor column
+    │           └── AdminUserRow.tsx        # Client: per-user editor (incl. ATP supervisor)
     └── lib/
         ├── auth-providers.ts  # Config-driven enabled providers (Azure primary)
-        ├── db-types.ts        # HAND-WRITTEN row types (replaceable with `supabase gen types`)
+        ├── constants.ts       # NEW: DEFAULT_DUE_DAYS = 14
+        ├── db-types.ts        # HAND-WRITTEN row types (AppUser now has supervising_atp_id)
         ├── format.ts          # STATUS_LABEL, STATUS_CLASS, ROLE_LABEL, isOverdue, formatDate
         ├── queries.ts         # fetchDashboardTasks, fetchPatientWithTasks, computeNextStep
         ├── server-helpers.ts  # requireUser, hasRole, isAdmin
@@ -182,15 +234,21 @@ The repo has no secrets in it. To run locally OR to drive the AWS migration, you
 
 2. **Hosted Supabase admin** — Addison has dashboard access at supabase.com. The project ref is `ftxxexwzrhyrqjguagbi`. If you need to push migrations to that project directly, use psql against `aws-1-us-west-2.pooler.supabase.com:5432` as user `postgres.ftxxexwzrhyrqjguagbi` (the direct DB host is IPv6-only on free tier). DB password is in `.env.local`.
 
-3. **AWS account** — Addison's. He'll need to set up an IAM user with appropriate permissions and share access keys, OR you'll need to do the AWS setup in his account via the console with him driving.
+3. **AWS account** — Addison's. He'll need to set up an IAM user with appropriate permissions and share access keys, OR you'll need to do the AWS setup in his account via the console with him driving. (Addison's partner is currently active on the EC2 setup — coordinate before duplicating work.)
 
 4. **GitHub** — repo is at `github.com/benpinoli/Choice-Healthcare-Task-System`. Both Addison (`Addisonslewis`) and `benpinoli` (whoever this is) have push access. Confirm yours.
+
+5. **gstack** — required globally per `CLAUDE.md`. If `~/.claude/skills/gstack/bin` doesn't exist, the PreToolUse hook will block all Skill calls. Install with:
+   ```
+   git clone --depth 1 https://github.com/garrytan/gstack.git ~/.claude/skills/gstack
+   cd ~/.claude/skills/gstack && ./setup --team
+   ```
 
 ---
 
 ## Plan for the AWS migration (the next major piece of work)
 
-This is what's next on the punchlist. Approach is single-EC2 with Docker Compose — simplest deployment that meets the goals. Can be upgraded to RDS + ECS Fargate later if scale demands.
+This is what's next on the punchlist. Approach is single-EC2 with Docker Compose — simplest deployment that meets the goals. Can be upgraded to RDS + ECS Fargate later if scale demands. Addison's partner is actively working on this — sync with him before starting fresh.
 
 ### Architecture
 
@@ -208,7 +266,7 @@ This is what's next on the punchlist. Approach is single-EC2 with Docker Compose
                          │      │                                            │
                          │      ├─ PostgREST (REST API on RLS)              │
                          │      ├─ GoTrue (auth)                            │
-                         │      └─ Postgres 17 + our 3 migrations + seed    │
+                         │      └─ Postgres 17 + migrations + seed          │
                          │            (data on encrypted EBS volume)        │
                          └────────────────────┬──────────────────────────────┘
                                               │
@@ -257,7 +315,7 @@ This is what's next on the punchlist. Approach is single-EC2 with Docker Compose
 
 6. **Apply migrations + seed** (15 min)
    - `psql` from your laptop to the new Postgres (you'll need to open 5432 temporarily, or use the EC2's psql via SSH tunnel — safer).
-   - Run `0001_init.sql`, `0002_rls.sql`, `0003_approve_gate.sql`, then `seed.sql`. Same files in `supabase/migrations/` and `supabase/seed.sql` — they don't care what Postgres they're talking to.
+   - Run every file in `supabase/migrations/` in order, then `seed.sql`. Same files in `supabase/migrations/` and `supabase/seed.sql` — they don't care what Postgres they're talking to.
    - **Important:** the seed inserts directly into `auth.users` with a bcrypted password using `crypt(... gen_salt('bf'))`. Requires `pgcrypto` extension — enable with `CREATE EXTENSION pgcrypto WITH SCHEMA extensions;` and add `extensions` to the search path. Same gotcha tripped us up on hosted Supabase. The seed already has `set search_path = public, extensions;` at the top.
 
 7. **Update Next.js env vars + deploy to Amplify** (45 min)
@@ -293,12 +351,17 @@ You can keep both running in parallel for as long as you want during the validat
 2. Apply the migration to whichever Postgres you're targeting (`psql -f`)
 3. New patients will get the new task; existing patients are unaffected (intentional — snapshot rule)
 
+### Change the default due-date offset
+1. Edit `DEFAULT_DUE_DAYS` in `src/lib/constants.ts`.
+2. **That's it for new patients.** Existing tasks already in the DB are unchanged (snapshot rule). If you want to bulk-rewrite, do it via a one-off SQL UPDATE — not by changing the constant.
+
 ### Add a new role beyond ATP/REP/MANAGER/BOSS
 1. Update the CHECK constraint on `app_users.roles` (it's array-typed; the check restricts allowed values)
 2. Update `current_user_roles()` and `has_any_role()` if needed
 3. Add to `Role` type in `src/lib/db-types.ts`
 4. Update RLS policies if the new role gets a special visibility tier
 5. Update the admin UI's role-button list in `src/app/(app)/admin/AdminUserRow.tsx`
+6. If the new role is ATP-like (capable of signing off `requires_atp_review`), update the gate trigger in `0003_approve_gate.sql` and the supervising_atp self-rule logic in `NewPatientForm.tsx` + `AdminUserRow.tsx`.
 
 ### Enable Google OAuth alongside Microsoft
 1. Flip `NEXT_PUBLIC_AUTH_GOOGLE_ENABLED=true` in env
@@ -310,11 +373,16 @@ You can keep both running in parallel for as long as you want during the validat
 2. Add the new value to `PayerType` type in `src/lib/db-types.ts`
 3. Seed new templates for the new payer type
 
+### Assign a new rep their ATP supervisor
+1. Go to /admin as DeAnne (or any BOSS/MANAGER).
+2. In the "ATP supervisor" column, pick from the dropdown (it lists only ATP-credentialed users).
+3. Save. Next time that rep creates a patient, the ATP dropdown will auto-fill to that supervisor.
+
 ---
 
 ## Footguns / things NOT to do
 
-- **`db-types.ts` is hand-written.** Supabase JS v2 generic `<Database>` collapses Insert/Update inference to `never` when given our simplified types — so we dropped the generic. After running `supabase gen types`, you can re-add it. Don't pretend the existing types are auto-generated; they're not.
+- **`db-types.ts` is hand-written.** Supabase JS v2 generic `<Database>` collapses Insert/Update inference to `never` when given our simplified types — so we dropped the generic. After running `supabase gen types`, you can re-add it. Don't pretend the existing types are auto-generated; they're not. When you add a column (like the recent `supervising_atp_id`), edit this file by hand.
 
 - **Next 16 renamed `middleware` → `proxy`.** Our file is `src/proxy.ts` exporting a `proxy()` function. If you're regenerating from older Next docs, don't reintroduce a `middleware.ts`.
 
@@ -326,9 +394,15 @@ You can keep both running in parallel for as long as you want during the validat
 
 - **Never put real patient names in logs.** Use IDs only. The free Supabase project is explicitly synthetic-only — real PHI goes only on the HIPAA-compliant stack (self-hosted on AWS).
 
-- **The `(app)` route group children are server components.** Inline editors / interactive forms must be in client components (`"use client"`). See `TaskActions.tsx`, `AdminUserRow.tsx` for the pattern.
+- **The `(app)` route group children are server components.** Inline editors / interactive forms must be in client components (`"use client"`). See `TaskActions.tsx`, `AdminUserRow.tsx`, `NewPatientForm.tsx` for the pattern.
 
 - **The middleware matcher excludes `/api`.** If you add API routes under `/api`, you have to gate auth in each one explicitly.
+
+- **`supervising_atp_id` is NOT enforced by the DB.** The "ATPs are NULL; non-ATPs point at an ATP" rule lives in the UI and `createPatient`. If you bulk-insert users via SQL, you can leave both ATP-credentialed users and pure REPs with a null supervisor — the new-patient form will then refuse to create a patient for that rep until an admin fixes it. That's the intended failure mode.
+
+- **The approval-gate trigger does NOT consult `supervising_atp_id`.** It only looks at the patient row's `assigned_atp_id`. The supervisor is just a default that flows into `assigned_atp_id` at patient creation.
+
+- **gstack hook can block tool use.** `.claude/settings.json` runs `.claude/hooks/check-gstack.sh` on every `Skill` PreToolUse. If gstack isn't installed globally, Skill calls are denied. This is intentional — install gstack, don't disable the hook.
 
 ---
 
@@ -340,6 +414,8 @@ These haven't been answered and shouldn't be invented:
 2. **Medicare and commercial template variants.** Stubs in seed; actual variants unknown — Choice may not know yet either.
 3. **Role structure validation.** Is the ATP / REP / MANAGER / BOSS set actually correct for how Choice operates? (Probably yes per recent input, but unconfirmed across the whole org.)
 4. **Is the task set finite?** If per-patient custom tasks happen often, we'd promote the "editable task types" enhancement sooner.
+5. **Is 14 days the right default due-date offset?** It's a guess. Real workflow data may want something tighter (or per-task offsets driven from the template).
+6. **Should `supervising_atp_id` be required at the DB level for non-ATP users?** Currently soft-enforced in app code only. If we never need the "fresh rep with no supervisor yet" state in practice, harden it as a CHECK constraint.
 
 ---
 
@@ -351,9 +427,9 @@ Brief context for your Claude. Across one long conversation, Addison:
 2. Stood up a free hosted Supabase project at `ftxxexwzrhyrqjguagbi.supabase.co` and pushed schema + seed via psql against the connection pooler (`aws-1-us-west-2.pooler.supabase.com:5432` — the direct DB host is IPv6-only and his network is IPv4-only).
 3. Localhost dev server confirmed working at `localhost:3000`. Sign-in works for all 5 seed users.
 4. Iterated on the seed based on Addison's feedback: renamed "Owner" column to "Awaiting" (responsible_role is who needs to act IRL, not an app user); added 3 patients for Matt (managers carry their own caseload); fixed Henry's ATP from Steve to Matt (ATP-credentialed reps handle their own ATP review).
-5. Pushed to GitHub on `build/v1-tracker` and `main`. The "merge to main" is fast-forward — both branches point at the same commit.
-6. Started a Vercel deploy. Got partway through (CLI auth was in progress). Pivoted to AWS during it — Vercel BAA cost (~$350/mo) plus Supabase HIPAA cost (~$600/mo) didn't make sense vs self-hosting Supabase on AWS (~$30-50/mo all-in).
-7. Got AWS CLI installed locally. Awaiting AWS account access to proceed with self-host setup.
+5. Pushed to GitHub on `build/v1-tracker` and `main`.
+6. Started a Vercel deploy. Got partway through (CLI auth was in progress). Pivoted to AWS — Vercel BAA cost (~$350/mo) plus Supabase HIPAA cost (~$600/mo) didn't make sense vs self-hosting Supabase on AWS (~$30-50/mo all-in). Got AWS CLI installed locally.
+7. **2026-05-23 evening:** added the rep-supervisor-ATP relationship and the 14-day default due-date. Migration `0004_supervising_atp.sql` was applied to the production database; the seed was updated to assign Tara → Steve and Jack → Matt; existing tasks with NULL due_dates were backfilled. The new-patient form was refactored into a reactive client component (`NewPatientForm.tsx`) that auto-fills the ATP dropdown from rep selection. The admin UI gained an "ATP supervisor" column. Addison's partner is now working on the EC2 self-host setup.
 
 That's where you start.
 
@@ -361,10 +437,11 @@ That's where you start.
 
 ## What to do first when you pick this up
 
-1. Read `CLAUDE.md` (deeper persistent context, more than this handoff)
-2. Read `ARCHITECTURE.md` (system overview with diagram)
-3. Have Addison send `.env.local` securely. Run `npm install` + `npm run dev`. Confirm the app boots and you can sign in as Tara at `localhost:3000`.
-4. Pick up the AWS migration plan above. If Addison has shared AWS credentials, drive it; otherwise wait for him.
-5. When you make changes, follow the existing patterns — see CLAUDE.md §12 "Common tasks & how to do them" and the recipes in this file.
+1. Read `CLAUDE.md` (deeper persistent context, more than this handoff — note the gstack-required block at the bottom).
+2. Read `ARCHITECTURE.md` (system overview with diagram).
+3. Confirm `~/.claude/skills/gstack/bin` exists. If it doesn't, install gstack before you do anything else (see Credentials §5 above) — the PreToolUse hook will block Skill calls otherwise.
+4. Have Addison send `.env.local` securely. Run `npm install` + `npm run dev`. Confirm the app boots and you can sign in as Tara at `localhost:3000`. Create a new patient as Tara and verify that the ATP dropdown auto-fills to Steve and the resulting tasks all have a due date 14 days out.
+5. Coordinate with Addison's partner on the AWS migration plan above so you don't duplicate his EC2 work.
+6. When you make changes, follow the existing patterns — see CLAUDE.md §12 "Common tasks & how to do them" and the recipes in this file.
 
 Welcome. Have fun.

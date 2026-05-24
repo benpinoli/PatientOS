@@ -7,9 +7,9 @@ Choice Healthcare is a small medical-equipment provider whose staff currently tr
 ## 2. Stack
 
 - **Frontend**: Next.js 16.2 App Router, React 19.2, Tailwind 4 (via `@tailwindcss/postcss`).
-- **Backend**: Supabase — Postgres 17, Auth (Microsoft/Azure OAuth + email/password for dev), Row-Level Security.
+- **Backend**: Supabase open-source stack — Postgres 17, GoTrue Auth, PostgREST, Kong, Row-Level Security. Currently using hosted Supabase for synthetic data while moving to self-hosted Supabase on AWS EC2.
 - **Client libraries**: `@supabase/ssr` for cookie-based server/middleware/browser clients (`src/lib/supabase/{server,browser}.ts`).
-- **Hosting**: Vercel (planned — not yet deployed).
+- **Hosting**: AWS Amplify for the Next.js app, with Supabase self-hosted on AWS EC2.
 - **Local Supabase config**: `supabase/config.toml` declares the Azure external provider and email auth on ports 54321/54322/54323.
 
 ## 3. Data model
@@ -30,6 +30,7 @@ erDiagram
     text_array roles
     text location
     uuid manager_id FK
+    uuid supervising_atp_id FK
     bool active
   }
   payers {
@@ -115,10 +116,10 @@ Visibility in plain English:
 
 | Table | Read | Write |
 |---|---|---|
-| `app_users` | everyone authenticated (needed for assignee dropdowns) | self-update, or BOSS/MANAGER on anyone |
+| `app_users` | your own profile, or all profiles once active | direct table updates disabled; `update_app_user()` allows BOSS/MANAGER on anyone and ATPs on pure REP accounts |
 | `payers` | everyone authenticated | BOSS only |
 | `task_templates` | everyone authenticated | BOSS or MANAGER |
-| `patients` | BOSS, or you are assigned rep/atp, or you are MANAGER and the assigned rep/atp reports to you | same as read, plus the `with check` requires you remain the rep/atp (or be BOSS/MANAGER) |
+| `patients` | active users only: BOSS, assigned rep/atp, or MANAGER for direct reports | active users only; app creation goes through `create_patient_with_tasks()` so patient + tasks are atomic |
 | `tasks` | inherits patient visibility via `exists (select 1 from patients …)` | inherits patient writability |
 
 The `with check` clauses are intentionally slightly stricter than `using` so a Rep can't reassign a patient off themselves.
@@ -142,11 +143,12 @@ Both are implemented in `src/lib/queries.ts` (`computeNextStep` and `fetchDashbo
 
 **(a) Next-step for a patient.** Among that patient's tasks where `required = true AND status != 'APPROVED'`, pick the row with the lowest `order_index`. If none → the pipeline is complete. Non-required tasks never block "what's next".
 
-**(b) Dashboard priority sort.** Within a user's visible task list, order by:
-
-1. `priority ASC NULLS LAST` (lower number = bigger bump; null = no manual bump)
-2. `due_date ASC NULLS LAST` (sooner is hotter; null floats down)
-3. `order_index ASC` (preserve workflow sequence as the tiebreaker)
+**(b) Intelligence-powered dashboard sort.** Within a user's visible task list,
+`fetchDashboardTasks` computes a queue score. The score is intentionally kept
+out of the UI, but it prioritizes tasks that create throughput: overdue work,
+blocked work, external-party waits, pending ATP review, near-submission cases,
+the patient's true next required step, and any manual priority bump. Ties fall
+back to due date and then workflow order.
 
 `isOverdue()` in `src/lib/format.ts` already encodes the "due_date < today" badge logic.
 
@@ -191,7 +193,9 @@ supabase/
     0001_init.sql               # tables, indexes, handle_new_auth_user trigger
     0002_rls.sql                # helpers + policies on all 5 tables
     0003_approve_gate.sql       # enforce_task_approval_gate trigger
-  seed.sql                      # 5 auth users + roles + payers + templates + 6 patients
+    0004_supervising_atp.sql    # default ATP supervisor on app_users
+    0005_harden_user_and_patient_workflows.sql # app-user RPCs + atomic patient creation
+  seed.sql                      # 5 auth users + roles + payers + templates + 9 patients
 ```
 
 ## 9. Out of scope for v1
@@ -208,11 +212,11 @@ The driving reason cited in the spec is **BAA cost avoidance** while the system 
 
 ## 10. Going to production
 
-v1 dev is on the Supabase free tier with synthetic seed data. The path to real-patient production:
+v1 dev is on hosted Supabase with synthetic seed data. The chosen production path is AWS:
 
-1. Upgrade the Supabase project to a paid tier that supports a **Business Associate Agreement** (Team plan with HIPAA add-on, currently).
-2. Execute the BAA with Supabase before any real PHI is loaded.
-3. Provision a separate production project; run the same `supabase/migrations/*.sql` against it. Skip `seed.sql` in prod.
-4. Configure the Azure AD app registration for the production Outlook tenant and set `SUPABASE_AUTH_EXTERNAL_AZURE_{CLIENT_ID,SECRET}` on the Supabase prod project.
-5. Deploy the Next.js app to Vercel with `NEXT_PUBLIC_SUPABASE_URL` + `NEXT_PUBLIC_SUPABASE_ANON_KEY` pointing at prod, and `NEXT_PUBLIC_AUTH_EMAIL_ENABLED=false` so the dev password form disappears.
+1. Run the open-source Supabase stack on an encrypted EC2 instance in `us-west-2`.
+2. Apply the same `supabase/migrations/*.sql` files. Do not load demo patients or password users in production.
+3. Deploy the Next.js app to AWS Amplify with `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` pointed at the self-hosted stack.
+4. Configure Microsoft/Azure OAuth in GoTrue and disable dev email/password before real users enter PHI.
+5. Before real patient data: confirm AWS BAA coverage, backups, audit logs, OS patching, restricted network access, and breach-response paperwork.
 6. Disable email signup in Supabase auth (`enable_signup = false`) once the staff roster is loaded — new accounts should only come via Azure SSO from that point on.
