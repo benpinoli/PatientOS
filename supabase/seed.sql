@@ -143,6 +143,8 @@ update public.app_users set
   roles = array['REP'],
   location = 'Reno',
   manager_id = '00000000-0000-0000-0000-000000000002',
+  -- Tara is a pure REP, so she needs an ATP supervisor. Steve.
+  supervising_atp_id = '00000000-0000-0000-0000-000000000003',
   active = true
 where id = '00000000-0000-0000-0000-000000000004';
 
@@ -151,6 +153,9 @@ update public.app_users set
   roles = array['REP'],
   location = 'Las Vegas',
   manager_id = '00000000-0000-0000-0000-000000000002',
+  -- Jack is a pure REP, supervised by Matt (MANAGER+ATP) — demos the
+  -- pattern where a manager is also someone's ATP signatory.
+  supervising_atp_id = '00000000-0000-0000-0000-000000000002',
   active = true
 where id = '00000000-0000-0000-0000-000000000005';
 
@@ -247,9 +252,12 @@ on conflict (id) do nothing;
 -- 6. Instantiate tasks for each patient from the matching templates,
 --    then bump some statuses so the UI shows variety.
 -- ------------------------------------------------------------
+-- All paperwork is due 14 days after the patient is created. Matches
+-- DEFAULT_DUE_DAYS in src/lib/constants.ts. Specific overrides (overdue
+-- demo state, priority bumps) are applied further down.
 insert into public.tasks
   (patient_id, template_id, label, responsible_role, requires_atp_review,
-   required, order_index, status, created_at)
+   required, order_index, status, due_date, created_at)
 select
   p.id,
   t.id,
@@ -259,6 +267,7 @@ select
   t.required,
   t.default_order,
   'NOT_STARTED',
+  (p.created_at::date + 14),
   now()
 from public.patients p
 join public.payers pa on pa.id = p.payer_id
