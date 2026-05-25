@@ -199,7 +199,7 @@ export async function completeTaskApproval(
   const supabase = await getSupabaseServer();
   const { userId, profile, task, patient } = await loadTaskContext(supabase, taskId);
 
-  if (task.status !== "DONE_PENDING_REVIEW" || !task.requires_atp_review) {
+  if (task.status !== "DONE_PENDING_REVIEW") {
     throw new Error("This task is not awaiting ATP approval.");
   }
   if (!canApproveAtpReview(profile, patient)) {

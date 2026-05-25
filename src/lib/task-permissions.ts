@@ -54,26 +54,27 @@ export function canApproveAtpReview(
   if (isSoloAtpRep(patient) && patient.assigned_rep_id === profile.id) {
     return true;
   }
-  if (patient.assigned_atp_id === profile.id && hasRole(profile, "ATP")) {
+  if (
+    patient.assigned_atp_id === profile.id &&
+    (hasRole(profile, "ATP") || hasRole(profile, "MANAGER"))
+  ) {
     return true;
   }
   return false;
 }
 
 /**
- * ATP approve with link — only on shared rep+ATP cases after rep marked done.
+ * Assigned ATP (or BOSS) can approve after rep submitted — any DONE_PENDING_REVIEW task.
  * Solo ATP-rep uses "Mark as done (signed)" instead.
  */
 export function canShowApproveButton(
   profile: AppUser,
   patient: PatientAssignment,
-  task: Pick<Task, "status" | "requires_atp_review">,
+  task: Pick<Task, "status">,
 ) {
   if (isSoloAtpRep(patient)) return false;
-  if (task.status !== "DONE_PENDING_REVIEW" || !task.requires_atp_review) return false;
-  if (!canApproveAtpReview(profile, patient)) return false;
-  if (hasRole(profile, "BOSS")) return true;
-  return isAtpOnlyReviewer(profile, patient);
+  if (task.status !== "DONE_PENDING_REVIEW") return false;
+  return canApproveAtpReview(profile, patient);
 }
 
 /** Solo ATP-rep: sign off directly (optional link, no approval queue). */

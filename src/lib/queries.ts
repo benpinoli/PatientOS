@@ -303,7 +303,7 @@ function scoreDashboardTask(
     score += QUEUE_WEIGHTS.externalPartyWaiting;
   }
 
-  if (task.status === "DONE_PENDING_REVIEW" && task.requires_atp_review) {
+  if (task.status === "DONE_PENDING_REVIEW") {
     if (
       profile &&
       patientCtx &&
