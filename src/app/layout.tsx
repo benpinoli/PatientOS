@@ -6,6 +6,11 @@ export const metadata: Metadata = {
   description: "Patient pipeline tracker for custom power wheelchair approvals.",
 };
 
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+};
+
 export default function RootLayout({
   children,
 }: Readonly<{

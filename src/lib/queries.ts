@@ -22,7 +22,14 @@ const QUEUE_WEIGHTS = {
 export type DashboardRow = Task & {
   patient: Pick<
     Patient,
-    "id" | "external_code" | "first_name" | "last_name" | "payer_id" | "created_at"
+    | "id"
+    | "external_code"
+    | "first_name"
+    | "last_name"
+    | "payer_id"
+    | "created_at"
+    | "assigned_rep_id"
+    | "assigned_atp_id"
   > & {
     payer_name?: string;
     next_step_label: string | null;
@@ -50,6 +57,8 @@ type RawDashboardTask = Task & {
     last_name: string;
     payer_id: string;
     created_at: string;
+    assigned_rep_id: string | null;
+    assigned_atp_id: string | null;
     payer: { name: string } | null;
   };
 };
@@ -67,6 +76,7 @@ export async function fetchDashboardTasks(supabase: SB): Promise<DashboardRow[]>
     *,
     patient:patients!inner (
       id, external_code, first_name, last_name, payer_id, created_at,
+      assigned_rep_id, assigned_atp_id,
       payer:payers ( name )
     )
     `,
@@ -90,6 +100,8 @@ export async function fetchDashboardTasks(supabase: SB): Promise<DashboardRow[]>
           last_name: t.patient.last_name,
           payer_id: t.patient.payer_id,
           created_at: t.patient.created_at,
+          assigned_rep_id: t.patient.assigned_rep_id,
+          assigned_atp_id: t.patient.assigned_atp_id,
           payer_name: t.patient.payer?.name,
           next_step_label: context?.nextStepLabel ?? null,
         },
@@ -126,8 +138,9 @@ export async function fetchDashboardBundle(supabase: SB): Promise<DashboardBundl
     .from("patients")
     .select(
       `
-      id, external_code, first_name, last_name, payer_id, created_at,
-      payer:payers ( name )
+        id, external_code, first_name, last_name, payer_id, created_at,
+        assigned_rep_id, assigned_atp_id,
+        payer:payers ( name )
       `,
     )
     .order("created_at", { ascending: true });

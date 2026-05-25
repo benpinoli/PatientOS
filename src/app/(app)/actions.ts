@@ -27,7 +27,6 @@ export async function updateTaskFields(
   taskId: string,
   patch: {
     link?: string | null;
-    due_date?: string | null;
     start_date?: string | null;
     priority?: number | null;
     blocked_reason?: string | null;
@@ -36,6 +35,63 @@ export async function updateTaskFields(
   const supabase = await getSupabaseServer();
   const { error } = await supabase.from("tasks").update(patch).eq("id", taskId);
   if (error) throw new Error(error.message);
+  revalidatePath("/", "layout");
+}
+
+export type TaskLinkEvent = {
+  id: string;
+  task_id: string;
+  link: string | null;
+  via_other_means: boolean;
+  posted_by: string | null;
+  created_at: string;
+};
+
+export async function fetchTaskLinkHistory(taskId: string): Promise<TaskLinkEvent[]> {
+  const supabase = await getSupabaseServer();
+  const { data, error } = await supabase
+    .from("task_link_events")
+    .select("id, task_id, link, via_other_means, posted_by, created_at")
+    .eq("task_id", taskId)
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as TaskLinkEvent[];
+}
+
+/** Approve with link (or other-means). Records history; due dates are not editable. */
+export async function completeTaskApproval(
+  taskId: string,
+  opts: {
+    link: string | null;
+    sentOtherMeans: boolean;
+    requiresAtpReview: boolean;
+  },
+) {
+  const supabase = await getSupabaseServer();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("You must be signed in.");
+
+  const trimmed = opts.link?.trim() ?? "";
+  if (!opts.sentOtherMeans && !trimmed) {
+    throw new Error("Paste a document link or check “Sent link through other means”.");
+  }
+
+  const patch: { status: TaskStatus; link?: string | null } = { status: "APPROVED" };
+  if (trimmed) patch.link = trimmed;
+
+  const { error } = await supabase.from("tasks").update(patch).eq("id", taskId);
+  if (error) throw new Error(error.message);
+
+  const { error: histErr } = await supabase.from("task_link_events").insert({
+    task_id: taskId,
+    link: trimmed || null,
+    via_other_means: opts.sentOtherMeans,
+    posted_by: user.id,
+  });
+  if (histErr) throw new Error(histErr.message);
+
   revalidatePath("/", "layout");
 }
 

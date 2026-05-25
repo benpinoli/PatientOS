@@ -1,130 +1,353 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import type { Task, TaskStatus } from "@/lib/db-types";
-import { updateTaskStatus, setTaskPriority, updateTaskFields } from "./actions";
+import { useEffect, useState, useTransition } from "react";
+import type { AppUser, Task } from "@/lib/db-types";
+import type { PatientAssignment } from "@/lib/task-permissions";
+import { canShowApproveButton, canShowMarkDone } from "@/lib/task-permissions";
+import {
+  updateTaskStatus,
+  setTaskPriority,
+  completeTaskApproval,
+  fetchTaskLinkHistory,
+  type TaskLinkEvent,
+} from "./actions";
 
-// Compact set of inline actions for one task row.
-// Decides which buttons to show based on requires_atp_review + current status.
-export function TaskActions({ task }: { task: Task }) {
+type TaskActionsProps = {
+  task: Task;
+  profile: AppUser;
+  patient: PatientAssignment;
+  /** card = full-width mobile stack; table = compact desktop cell */
+  layout?: "card" | "table";
+};
+
+export function TaskActions({ task, profile, patient, layout = "table" }: TaskActionsProps) {
   const [pending, start] = useTransition();
-  const [showMenu, setShowMenu] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [history, setHistory] = useState<TaskLinkEvent[] | null>(null);
+  const [linkDraft, setLinkDraft] = useState(task.link ?? "");
+  const [sentOtherMeans, setSentOtherMeans] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const flip = (status: TaskStatus) =>
-    start(() => updateTaskStatus(task.id, status));
+  const isCard = layout === "card";
+  const showApprove = canShowApproveButton(profile, patient, task);
+  const showMarkDone = canShowMarkDone(profile, patient, task);
+  const needsLinkGate = showApprove && task.status === "DONE_PENDING_REVIEW";
 
-  const buttons: { label: string; status: TaskStatus; tone: string }[] = [];
+  useEffect(() => {
+    if (!showHistory) return;
+    start(async () => {
+      const rows = await fetchTaskLinkHistory(task.id);
+      setHistory(rows);
+    });
+  }, [showHistory, task.id]);
 
-  if (task.status === "NOT_STARTED") {
-    buttons.push({ label: "Start", status: "IN_PROGRESS", tone: "bg-blue-600 hover:bg-blue-500 text-white" });
-  }
-  if (task.status === "IN_PROGRESS" || task.status === "NOT_STARTED") {
-    if (task.requires_atp_review) {
-      buttons.push({ label: "Mark done", status: "DONE_PENDING_REVIEW", tone: "bg-amber-500 hover:bg-amber-400 text-white" });
-    } else {
-      buttons.push({ label: "Approve", status: "APPROVED", tone: "bg-emerald-600 hover:bg-emerald-500 text-white" });
-    }
-  }
-  if (task.status === "DONE_PENDING_REVIEW") {
-    // The server enforces who's actually allowed to flip this.
-    buttons.push({ label: "Approve", status: "APPROVED", tone: "bg-emerald-600 hover:bg-emerald-500 text-white" });
-  }
-  if (task.status !== "BLOCKED" && task.status !== "APPROVED") {
-    buttons.push({ label: "Block", status: "BLOCKED", tone: "border border-zinc-300 text-zinc-700 hover:bg-zinc-50" });
-  }
-  if (task.status === "BLOCKED") {
-    buttons.push({ label: "Unblock", status: "IN_PROGRESS", tone: "border border-zinc-300 text-zinc-700 hover:bg-zinc-50" });
-  }
+  useEffect(() => {
+    if (!showHistory) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShowHistory(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [showHistory]);
+
+  const flip = (status: Task["status"]) =>
+    start(async () => {
+      setError(null);
+      try {
+        await updateTaskStatus(task.id, status);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Update failed");
+      }
+    });
+
+  const onApprove = () =>
+    start(async () => {
+      setError(null);
+      try {
+        await completeTaskApproval(task.id, {
+          link: linkDraft.trim() || null,
+          sentOtherMeans,
+          requiresAtpReview: task.requires_atp_review,
+        });
+        setSentOtherMeans(false);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Approval failed");
+      }
+    });
+
+  const approveReady = sentOtherMeans || linkDraft.trim().length > 0;
 
   return (
-    <div className="flex flex-wrap justify-end gap-1.5">
-      {buttons.map((b) => (
-        <button
-          key={b.label}
-          disabled={pending}
-          onClick={() => flip(b.status)}
-          className={"rounded px-2 py-1 text-xs font-medium transition disabled:opacity-50 " + b.tone}
-        >
-          {b.label}
-        </button>
-      ))}
-      <button
-        disabled={pending}
-        onClick={() => setShowMenu((s) => !s)}
-        className="rounded border border-zinc-300 px-2 py-1 text-xs text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+    <div
+      className={
+        "relative flex w-full flex-col gap-3 " +
+        (isCard ? "items-stretch" : "items-end")
+      }
+    >
+      {error && (
+        <p className="w-full rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+          {error}
+        </p>
+      )}
+
+      <div
+        className={
+          "flex w-full flex-wrap gap-2 " +
+          (isCard ? "justify-stretch" : "justify-end")
+        }
       >
-        ⋯
-      </button>
-      {showMenu && (
-        <TaskInlineEditor task={task} onClose={() => setShowMenu(false)} />
+        {task.status === "NOT_STARTED" && (
+          <ActionButton
+            disabled={pending}
+            label="Start"
+            tone="primary-blue"
+            fullWidth={isCard}
+            onClick={() => flip("IN_PROGRESS")}
+          />
+        )}
+        {showMarkDone && (
+          <ActionButton
+            disabled={pending}
+            label="Mark done"
+            tone="primary-amber"
+            fullWidth={isCard}
+            onClick={() => flip("DONE_PENDING_REVIEW")}
+          />
+        )}
+        {showApprove && !needsLinkGate && (
+          <ActionButton
+            disabled={pending}
+            label="Approve"
+            tone="primary-green"
+            fullWidth={isCard}
+            onClick={() => flip("APPROVED")}
+          />
+        )}
+        {task.status !== "BLOCKED" && task.status !== "APPROVED" && (
+          <ActionButton
+            disabled={pending}
+            label="Block"
+            tone="secondary"
+            fullWidth={isCard}
+            onClick={() => flip("BLOCKED")}
+          />
+        )}
+        {task.status === "BLOCKED" && (
+          <ActionButton
+            disabled={pending}
+            label="Unblock"
+            tone="secondary"
+            fullWidth={isCard}
+            onClick={() => flip("IN_PROGRESS")}
+          />
+        )}
+        <ActionButton
+          disabled={pending}
+          label="Link history"
+          tone="secondary"
+          fullWidth={isCard}
+          onClick={() => setShowHistory((s) => !s)}
+        />
+      </div>
+
+      {showApprove && needsLinkGate && (
+        <div className="w-full space-y-3 rounded-lg border border-emerald-200 bg-emerald-50/50 p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-emerald-900">
+            Approve with documentation
+          </p>
+          <label className="block text-sm font-medium text-zinc-700">
+            Paste updated document link
+            <input
+              type="url"
+              inputMode="url"
+              autoComplete="url"
+              value={linkDraft}
+              onChange={(e) => {
+                setLinkDraft(e.target.value);
+                setSentOtherMeans(false);
+              }}
+              placeholder="https://"
+              className="mt-1.5 w-full rounded-lg border border-zinc-300 bg-white px-3 py-3 text-base shadow-sm"
+            />
+          </label>
+          <label className="flex min-h-11 items-center gap-3 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700">
+            <input
+              type="checkbox"
+              className="size-4 shrink-0"
+              checked={sentOtherMeans}
+              onChange={(e) => setSentOtherMeans(e.target.checked)}
+            />
+            Sent through other means (no URL)
+          </label>
+          <ActionButton
+            disabled={pending || !approveReady}
+            label="Approve"
+            tone="primary-green"
+            fullWidth
+            onClick={onApprove}
+          />
+        </div>
+      )}
+
+      {showHistory && (
+        <>
+          <button
+            type="button"
+            aria-label="Close link history"
+            className="fixed inset-0 z-40 bg-black/30 lg:hidden"
+            onClick={() => setShowHistory(false)}
+          />
+          <LinkHistoryMenu
+            history={history}
+            pending={pending}
+            task={task}
+            isCard={isCard}
+            onClose={() => setShowHistory(false)}
+            onClearPriority={() => start(() => setTaskPriority(task.id, null))}
+          />
+        </>
       )}
     </div>
   );
 }
 
-function TaskInlineEditor({ task, onClose }: { task: Task; onClose: () => void }) {
-  const [pending, start] = useTransition();
-  const [link, setLink] = useState(task.link ?? "");
-  const [due, setDue] = useState(task.due_date ?? "");
-  const [priority, setPriority] = useState(task.priority?.toString() ?? "");
+export function LatestLinkCell({
+  task,
+  variant = "table",
+}: {
+  task: Task;
+  variant?: "table" | "card";
+}) {
+  if (task.link) {
+    return (
+      <a
+        href={task.link}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={
+          variant === "card"
+            ? "text-sm font-medium text-blue-600 underline decoration-blue-600/30 underline-offset-2"
+            : "block max-w-[12rem] truncate text-xs text-blue-600 hover:underline"
+        }
+        title={task.link}
+      >
+        {task.link}
+      </a>
+    );
+  }
+  return <span className="text-xs text-zinc-400">No link yet</span>;
+}
 
-  const save = () =>
-    start(async () => {
-      await updateTaskFields(task.id, {
-        link: link.trim() || null,
-        due_date: due || null,
-        priority: priority === "" ? null : Number(priority),
-      });
-      onClose();
-    });
+const TONES = {
+  "primary-blue": "bg-blue-600 text-white hover:bg-blue-500 active:bg-blue-700",
+  "primary-amber": "bg-amber-500 text-white hover:bg-amber-400 active:bg-amber-600",
+  "primary-green": "bg-emerald-600 text-white hover:bg-emerald-500 active:bg-emerald-700",
+  secondary:
+    "border border-zinc-300 bg-white text-zinc-800 hover:bg-zinc-50 active:bg-zinc-100",
+} as const;
 
-  const clearPriority = () => start(() => setTaskPriority(task.id, null));
-
+function ActionButton({
+  label,
+  tone,
+  disabled,
+  fullWidth,
+  onClick,
+}: {
+  label: string;
+  tone: keyof typeof TONES;
+  disabled: boolean;
+  fullWidth?: boolean;
+  onClick: () => void;
+}) {
   return (
-    <div className="absolute right-4 z-10 mt-8 w-72 rounded-md border border-zinc-200 bg-white p-3 shadow-lg">
-      <label className="block text-xs font-medium text-zinc-600">Link (URL)</label>
-      <input
-        type="url"
-        value={link}
-        onChange={(e) => setLink(e.target.value)}
-        placeholder="https://"
-        className="mt-1 w-full rounded border border-zinc-300 px-2 py-1 text-sm"
-      />
-      <label className="mt-2 block text-xs font-medium text-zinc-600">Due date</label>
-      <input
-        type="date"
-        value={due}
-        onChange={(e) => setDue(e.target.value)}
-        className="mt-1 w-full rounded border border-zinc-300 px-2 py-1 text-sm"
-      />
-      <label className="mt-2 block text-xs font-medium text-zinc-600">Priority (lower = higher)</label>
-      <div className="flex gap-2">
-        <input
-          type="number"
-          value={priority}
-          onChange={(e) => setPriority(e.target.value)}
-          className="mt-1 w-full rounded border border-zinc-300 px-2 py-1 text-sm"
-        />
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={
+        "inline-flex min-h-11 items-center justify-center rounded-lg px-4 py-2.5 text-sm font-semibold transition disabled:opacity-50 " +
+        TONES[tone] +
+        (fullWidth ? " w-full flex-1 sm:flex-none sm:min-w-[7rem]" : " min-w-[5.5rem]")
+      }
+    >
+      {label}
+    </button>
+  );
+}
+
+function LinkHistoryMenu({
+  history,
+  pending,
+  task,
+  isCard,
+  onClose,
+  onClearPriority,
+}: {
+  history: TaskLinkEvent[] | null;
+  pending: boolean;
+  task: Task;
+  isCard: boolean;
+  onClose: () => void;
+  onClearPriority: () => void;
+}) {
+  return (
+    <div
+      className={
+        "z-50 rounded-lg border border-zinc-200 bg-white p-4 shadow-xl " +
+        (isCard
+          ? "fixed inset-x-3 bottom-3 max-h-[min(70vh,32rem)] overflow-y-auto"
+          : "absolute right-0 top-full mt-2 w-80 max-h-96 overflow-y-auto")
+      }
+      role="dialog"
+      aria-label="Link history"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm font-semibold text-zinc-900">Link history</span>
         <button
-          onClick={clearPriority}
-          disabled={pending}
-          className="mt-1 rounded border border-zinc-300 px-2 text-xs hover:bg-zinc-50"
+          type="button"
+          onClick={onClose}
+          className="min-h-10 rounded-lg border border-zinc-200 px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
         >
-          Clear
+          Close
         </button>
       </div>
-      <div className="mt-3 flex justify-end gap-2">
-        <button onClick={onClose} className="rounded px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-50">
-          Cancel
-        </button>
+      {history === null ? (
+        <p className="mt-3 text-sm text-zinc-500">Loading…</p>
+      ) : history.length === 0 ? (
+        <p className="mt-3 text-sm text-zinc-500">No links recorded yet.</p>
+      ) : (
+        <ul className="mt-3 space-y-3">
+          {history.map((e) => (
+            <li key={e.id} className="rounded-md border border-zinc-100 bg-zinc-50 p-3 text-sm">
+              {e.via_other_means ? (
+                <span className="text-zinc-700">Sent via other means</span>
+              ) : (
+                <a
+                  href={e.link!}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="break-all font-medium text-blue-600 hover:underline"
+                >
+                  {e.link}
+                </a>
+              )}
+              <div className="mt-1 text-xs text-zinc-500">
+                {new Date(e.created_at).toLocaleString()}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      {task.priority != null && (
         <button
-          onClick={save}
+          type="button"
           disabled={pending}
-          className="rounded bg-zinc-900 px-3 py-1 text-xs font-medium text-white hover:bg-zinc-800 disabled:opacity-50"
+          onClick={onClearPriority}
+          className="mt-4 flex min-h-11 w-full items-center justify-center rounded-lg border border-zinc-300 text-sm font-medium hover:bg-zinc-50"
         >
-          Save
+          Clear manual priority ({task.priority})
         </button>
-      </div>
+      )}
     </div>
   );
 }
