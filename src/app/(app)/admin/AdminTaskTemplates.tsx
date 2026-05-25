@@ -1,5 +1,5 @@
 import type { TaskTemplate } from "@/lib/db-types";
-import { ROLE_LABEL } from "@/lib/format";
+import { AdminTemplateRow } from "./AdminTemplateRow";
 
 const PAYER_LABEL: Record<string, string> = {
   COMMERCIAL: "Insurance",
@@ -9,15 +9,19 @@ const PAYER_LABEL: Record<string, string> = {
 
 export function AdminTaskTemplates({
   byType,
+  canEdit,
 }: {
   byType: Record<string, TaskTemplate[]>;
+  canEdit: boolean;
 }) {
   const types = Object.keys(byType).sort();
 
   return (
     <div className="space-y-4">
       {types.map((type) => {
-        const templates = byType[type];
+        const templates = [...byType[type]].sort(
+          (a, b) => a.default_order - b.default_order,
+        );
         const title = PAYER_LABEL[type] ?? type;
         return (
           <div
@@ -28,58 +32,39 @@ export function AdminTaskTemplates({
               {title}
             </div>
 
-            <ul className="divide-y divide-zinc-100 lg:hidden">
+            <ul className="lg:hidden">
               {templates.map((t) => (
-                <li key={t.id} className="px-4 py-3">
-                  <p className="text-sm font-medium text-zinc-900">
-                    <span className="text-zinc-400">#{t.default_order}</span> {t.label}
-                  </p>
-                  <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
-                    <div>
-                      <dt className="font-medium uppercase text-zinc-400">Awaiting</dt>
-                      <dd className="mt-0.5 text-zinc-700">
-                        {ROLE_LABEL[t.responsible_role]}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="font-medium uppercase text-zinc-400">ATP review</dt>
-                      <dd className="mt-0.5 text-zinc-700">
-                        {t.requires_atp_review ? "Yes" : "—"}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="font-medium uppercase text-zinc-400">Required</dt>
-                      <dd className="mt-0.5 text-zinc-700">{t.required ? "Yes" : "—"}</dd>
-                    </div>
-                  </dl>
-                </li>
+                <AdminTemplateRow
+                  key={t.id}
+                  template={t}
+                  canEdit={canEdit}
+                  variant="card"
+                />
               ))}
             </ul>
 
-            <div className="hidden lg:block">
-              <table className="w-full divide-y divide-zinc-200 text-sm">
+            <div className="hidden overflow-x-auto lg:block">
+              <table className="w-full min-w-[48rem] divide-y divide-zinc-200 text-sm">
                 <thead className="text-left text-xs uppercase tracking-wide text-zinc-500">
                   <tr>
-                    <th className="w-10 px-4 py-2">#</th>
-                    <th className="px-4 py-2">Label</th>
-                    <th className="px-4 py-2">Awaiting</th>
-                    <th className="px-4 py-2">ATP review</th>
-                    <th className="px-4 py-2">Required</th>
+                    <th className="w-16 px-3 py-2">#</th>
+                    <th className="min-w-[12rem] px-3 py-2">Label</th>
+                    <th className="px-3 py-2">Awaiting</th>
+                    <th className="px-3 py-2">ATP review</th>
+                    <th className="px-3 py-2">Required</th>
+                    {canEdit && (
+                      <th className="w-24 px-3 py-2 text-right">Save</th>
+                    )}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-100">
                   {templates.map((t) => (
-                    <tr key={t.id}>
-                      <td className="px-4 py-2 text-xs text-zinc-500">{t.default_order}</td>
-                      <td className="px-4 py-2 text-zinc-800">{t.label}</td>
-                      <td className="px-4 py-2 text-xs text-zinc-500">
-                        {t.responsible_role}
-                      </td>
-                      <td className="px-4 py-2 text-xs">
-                        {t.requires_atp_review ? "yes" : "—"}
-                      </td>
-                      <td className="px-4 py-2 text-xs">{t.required ? "yes" : "—"}</td>
-                    </tr>
+                    <AdminTemplateRow
+                      key={t.id}
+                      template={t}
+                      canEdit={canEdit}
+                      variant="table"
+                    />
                   ))}
                 </tbody>
               </table>

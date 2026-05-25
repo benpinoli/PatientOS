@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { getSupabaseServer } from "@/lib/supabase/server";
-import type { TaskStatus, AppUser } from "@/lib/db-types";
+import type { ResponsibleRole, TaskStatus, AppUser } from "@/lib/db-types";
 import { DEFAULT_DUE_DAYS } from "@/lib/constants";
 import { normalizeExternalUrl } from "@/lib/urls";
 import {
@@ -311,6 +311,66 @@ export async function updateUser(
     p_location: patch.location ?? null,
     p_full_name: patch.full_name ?? null,
   });
+  if (error) throw new Error(error.message);
+  revalidatePath("/admin");
+}
+
+// =====================================================================
+// Admin: task template checklist (BOSS / MANAGER only)
+// =====================================================================
+
+async function requireTemplateEditor() {
+  const supabase = await getSupabaseServer();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("You must be signed in.");
+
+  const { data: profile, error } = await supabase
+    .from("app_users")
+    .select("roles")
+    .eq("id", user.id)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+
+  const roles = (profile?.roles ?? []) as string[];
+  if (!roles.includes("BOSS") && !roles.includes("MANAGER")) {
+    throw new Error("Only managers can edit task templates.");
+  }
+  return supabase;
+}
+
+export async function updateTaskTemplate(
+  templateId: string,
+  patch: {
+    label: string;
+    responsible_role: ResponsibleRole;
+    requires_atp_review: boolean;
+    required: boolean;
+    default_order: number;
+  },
+) {
+  const supabase = await requireTemplateEditor();
+
+  const label = patch.label.trim();
+  if (!label) throw new Error("Label is required.");
+
+  const order = Math.round(patch.default_order);
+  if (!Number.isFinite(order) || order < 1) {
+    throw new Error("Order must be a positive number.");
+  }
+
+  const { error } = await supabase
+    .from("task_templates")
+    .update({
+      label,
+      responsible_role: patch.responsible_role,
+      requires_atp_review: patch.requires_atp_review,
+      required: patch.required,
+      default_order: order,
+    })
+    .eq("id", templateId);
+
   if (error) throw new Error(error.message);
   revalidatePath("/admin");
 }

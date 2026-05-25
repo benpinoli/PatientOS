@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { requireUser, isAdmin } from "@/lib/server-helpers";
+import { requireUser, isAdmin, hasRole } from "@/lib/server-helpers";
 import { AdminUserRow } from "./AdminUserRow";
 import { AdminTaskTemplates } from "./AdminTaskTemplates";
 
@@ -8,6 +8,9 @@ export const dynamic = "force-dynamic";
 export default async function AdminPage() {
   const { supabase, profile } = await requireUser();
   if (!isAdmin(profile)) redirect("/");
+
+  const canEditTemplates =
+    hasRole(profile, "BOSS") || hasRole(profile, "MANAGER");
 
   const [{ data: users }, { data: templates }] = await Promise.all([
     supabase.from("app_users").select("*").order("full_name"),
@@ -63,10 +66,11 @@ export default async function AdminPage() {
       <section className="space-y-3">
         <h2 className="text-lg font-semibold text-zinc-900">Task templates</h2>
         <p className="text-sm text-zinc-500">
-          Read-only in v1. Editing templates does NOT rewrite tasks on
-          in-flight patients (fields are snapshotted at instantiation).
+          {canEditTemplates
+            ? "Edit the master checklist per payer type. Changes apply to new patients only — existing cases keep their snapshotted tasks."
+            : "View-only. Managers and bosses can edit templates."}
         </p>
-        <AdminTaskTemplates byType={byType} />
+        <AdminTaskTemplates byType={byType} canEdit={canEditTemplates} />
       </section>
     </div>
   );
