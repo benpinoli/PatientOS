@@ -1,7 +1,13 @@
 import Link from "next/link";
 import { requireUser, hasRole } from "@/lib/server-helpers";
-import { isPatientAssignedToUser } from "@/lib/queries";
-import { PatientTable, type PatientListRow } from "./PatientTable";
+import {
+  isEmployeePatient,
+  isSharedWithUser,
+  isSoloOwnedByUser,
+  isUserInvolvedOnPatient,
+} from "@/lib/task-permissions";
+import { PatientListSection } from "./PatientListSection";
+import { type PatientListRow } from "./PatientTable";
 
 export const dynamic = "force-dynamic";
 
@@ -34,10 +40,11 @@ export default async function PatientsListPage() {
 
   const isManager = hasRole(profile, "MANAGER");
   const isBoss = hasRole(profile, "BOSS");
-  const showTeamSplit = isManager || isBoss;
+  const showTeamSection = isManager || isBoss;
 
-  const myPatients: PatientListRow[] = [];
-  const otherPatients: PatientListRow[] = [];
+  const soloOwned: PatientListRow[] = [];
+  const shared: PatientListRow[] = [];
+  const team: PatientListRow[] = [];
 
   for (const p of rows) {
     const listRow: PatientListRow = {
@@ -51,27 +58,33 @@ export default async function PatientsListPage() {
       atp: p.atp,
     };
 
-    if (!showTeamSplit) {
-      myPatients.push(listRow);
+    const assignment = {
+      assigned_rep_id: p.assigned_rep_id,
+      assigned_atp_id: p.assigned_atp_id,
+    };
+
+    if (isSoloOwnedByUser(assignment, profile.id)) {
+      soloOwned.push(listRow);
       continue;
     }
 
-    if (isPatientAssignedToUser(p, profile.id)) {
-      myPatients.push(listRow);
+    if (isSharedWithUser(assignment, profile.id)) {
+      shared.push(listRow);
       continue;
     }
 
-    const onTeam =
-      (p.assigned_rep_id && reportIds.has(p.assigned_rep_id)) ||
-      (p.assigned_atp_id && reportIds.has(p.assigned_atp_id));
-
-    if (isBoss || (isManager && onTeam)) {
-      otherPatients.push(listRow);
+    if (showTeamSection && !isUserInvolvedOnPatient(assignment, profile.id)) {
+      if (
+        isBoss ||
+        isEmployeePatient(assignment, profile.id, reportIds)
+      ) {
+        team.push(listRow);
+      }
     }
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-xl font-semibold text-zinc-900">Patients</h1>
@@ -87,29 +100,28 @@ export default async function PatientsListPage() {
         </Link>
       </div>
 
-      {showTeamSplit ? (
-        <>
-          <section className="space-y-2">
-            <h2 className="text-base font-semibold text-zinc-900">My patients</h2>
-            <p className="text-sm text-zinc-500">
-              Cases where you are the assigned rep or ATP.
-            </p>
-            <PatientTable rows={myPatients} />
-          </section>
+      <PatientListSection
+        title="My patients"
+        description="You are both the rep and the ATP on these cases — your fully owned caseload."
+        rows={soloOwned}
+      />
 
-          <section className="space-y-2">
-            <h2 className="text-base font-semibold text-zinc-900">Other patients</h2>
-            <p className="text-sm text-zinc-500">
-              Your team&apos;s caseload — you can view progress but others own the work.
-            </p>
-            <PatientTable rows={otherPatients} />
-          </section>
-        </>
-      ) : (
-        <section className="space-y-2">
-          <h2 className="text-base font-semibold text-zinc-900">My patients</h2>
-          <PatientTable rows={myPatients} />
-        </section>
+      <PatientListSection
+        title="Shared patients"
+        description="You are the rep or the ATP; the other role is handled by someone else on your team."
+        rows={shared}
+      />
+
+      {showTeamSection && (
+        <PatientListSection
+          title={isBoss ? "Other patients" : "Patients of my employees"}
+          description={
+            isBoss
+              ? "All other cases in the organization — not on your personal or shared caseload."
+              : "Cases owned by your direct reports — you can view progress but are not the assigned rep or ATP."
+          }
+          rows={team}
+        />
       )}
     </div>
   );

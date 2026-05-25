@@ -245,12 +245,7 @@ export async function fetchDashboardBundle(
   return { topFive, pendingAtpReview, allPatients };
 }
 
-export function isPatientAssignedToUser(
-  patient: { assigned_rep_id: string | null; assigned_atp_id: string | null },
-  userId: string,
-) {
-  return patient.assigned_rep_id === userId || patient.assigned_atp_id === userId;
-}
+export { isUserInvolvedOnPatient as isPatientAssignedToUser } from "@/lib/task-permissions";
 
 function buildPatientQueueContext(tasks: RawDashboardTask[]) {
   const contextByPatient = new Map<string, PatientQueueContext>();

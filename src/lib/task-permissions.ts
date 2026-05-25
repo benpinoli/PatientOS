@@ -17,6 +17,39 @@ export function isSoloAtpRep(patient: PatientAssignment) {
   );
 }
 
+/** User is assigned as rep or ATP on this patient. */
+export function isUserInvolvedOnPatient(
+  patient: PatientAssignment,
+  userId: string,
+) {
+  return (
+    patient.assigned_rep_id === userId || patient.assigned_atp_id === userId
+  );
+}
+
+/** User is both rep and ATP (fully owned caseload). */
+export function isSoloOwnedByUser(patient: PatientAssignment, userId: string) {
+  return isSoloAtpRep(patient) && patient.assigned_rep_id === userId;
+}
+
+/** User is rep or ATP but shares the case with someone else. */
+export function isSharedWithUser(patient: PatientAssignment, userId: string) {
+  return isUserInvolvedOnPatient(patient, userId) && !isSoloOwnedByUser(patient, userId);
+}
+
+/** Manager/BOSS: caseload of a direct report, not involving the viewer. */
+export function isEmployeePatient(
+  patient: PatientAssignment,
+  userId: string,
+  reportIds: ReadonlySet<string>,
+) {
+  if (isUserInvolvedOnPatient(patient, userId)) return false;
+  return (
+    (patient.assigned_rep_id != null && reportIds.has(patient.assigned_rep_id)) ||
+    (patient.assigned_atp_id != null && reportIds.has(patient.assigned_atp_id))
+  );
+}
+
 /** ATP signs only; a different rep owns the paperwork. */
 export function isAtpOnlyReviewer(profile: AppUser, patient: PatientAssignment) {
   return (
