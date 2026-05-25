@@ -10,12 +10,15 @@ import {
   normalizePayerTypeCode,
 } from "@/lib/payer-types";
 import type { AppUser, PayerType, ResponsibleRole, TaskStatus } from "@/lib/db-types";
+import { dueDateAfterBusinessDays, toISODateString } from "@/lib/business-days";
 import { DEFAULT_DUE_DAYS } from "@/lib/constants";
 import { normalizeExternalUrl } from "@/lib/urls";
 import {
   canApproveAtpReview,
+  canSaveTaskLink,
   canShowMarkDone,
   canShowMarkDoneSigned,
+  canShowSentForSignature,
   markDoneNextStatus,
   type PatientAssignment,
 } from "@/lib/task-permissions";
@@ -86,7 +89,7 @@ async function loadTaskContext(supabase: Awaited<ReturnType<typeof getSupabaseSe
 
   const { data: task, error: taskErr } = await supabase
     .from("tasks")
-    .select("id, patient_id, status, requires_atp_review")
+    .select("id, patient_id, status, requires_atp_review, responsible_role, link")
     .eq("id", taskId)
     .maybeSingle();
   if (taskErr || !task) throw new Error("Task not found.");
@@ -130,6 +133,63 @@ async function recordLinkEvent(
     posted_by: userId,
   });
   if (histErr) throw new Error(histErr.message);
+}
+
+/** Save document link; first link on a step starts it (NOT_STARTED → IN_PROGRESS). */
+export async function submitTaskLink(taskId: string, link: string | null) {
+  const supabase = await getSupabaseServer();
+  const { userId, profile, task, patient } = await loadTaskContext(supabase, taskId);
+
+  if (!canSaveTaskLink(profile, patient, task)) {
+    throw new Error("You cannot update the link on this task.");
+  }
+
+  const trimmed = link?.trim() ?? "";
+  if (!trimmed) throw new Error("Enter a document link to save.");
+
+  const normalized = normalizeExternalUrl(trimmed);
+  if (!normalized) throw new Error("Enter a valid document link.");
+
+  const today = toISODateString(new Date());
+  const patch: {
+    link: string;
+    status?: TaskStatus;
+    start_date?: string;
+  } = { link: normalized };
+
+  if (task.status === "NOT_STARTED") {
+    patch.status = "IN_PROGRESS";
+    patch.start_date = today;
+  }
+
+  const { error } = await supabase.from("tasks").update(patch).eq("id", taskId);
+  if (error) throw new Error(error.message);
+
+  await recordLinkEvent(supabase, taskId, userId, normalized, false);
+  revalidatePath("/", "layout");
+}
+
+/** Doctor/PT: sent paperwork out; due in 2 business days for signature return. */
+export async function submitSentForSignature(taskId: string) {
+  const supabase = await getSupabaseServer();
+  const { profile, task, patient } = await loadTaskContext(supabase, taskId);
+
+  if (!canShowSentForSignature(profile, patient, task)) {
+    throw new Error("You cannot mark this step as sent for signature.");
+  }
+
+  const due = dueDateAfterBusinessDays(2);
+
+  const { error } = await supabase
+    .from("tasks")
+    .update({
+      status: "AWAITING_SIGNATURE",
+      due_date: due,
+    })
+    .eq("id", taskId);
+
+  if (error) throw new Error(error.message);
+  revalidatePath("/", "layout");
 }
 
 /** Rep/ATP mark work done — always requires link or “already sent”. */

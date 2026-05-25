@@ -1,4 +1,15 @@
-import type { AppUser, Task } from "@/lib/db-types";
+import type { AppUser, ResponsibleRole, Task } from "@/lib/db-types";
+
+const OPEN_REP_STATUSES = new Set<Task["status"]>([
+  "NOT_STARTED",
+  "IN_PROGRESS",
+  "AWAITING_SIGNATURE",
+]);
+
+/** Final signature is collected outside the company (Doctor, PT). */
+export function isExternalFinalSignature(role: ResponsibleRole) {
+  return role === "DOCTOR" || role === "PT";
+}
 
 export type PatientAssignment = {
   assigned_rep_id: string | null;
@@ -116,7 +127,7 @@ export function canShowMarkDoneSigned(
   patient: PatientAssignment,
   task: Pick<Task, "status">,
 ) {
-  if (task.status !== "IN_PROGRESS" && task.status !== "NOT_STARTED") return false;
+  if (!OPEN_REP_STATUSES.has(task.status)) return false;
   return isSoloAtpRep(patient) && patient.assigned_rep_id === profile.id;
 }
 
@@ -126,17 +137,29 @@ export function canShowMarkDone(
   patient: PatientAssignment,
   task: Pick<Task, "status" | "requires_atp_review">,
 ) {
-  if (task.status !== "IN_PROGRESS" && task.status !== "NOT_STARTED") return false;
+  if (!OPEN_REP_STATUSES.has(task.status)) return false;
   if (canShowMarkDoneSigned(profile, patient, task)) return false;
   return canDoRepWorkflow(profile, patient);
 }
 
-export function canShowStartTask(
+/** Save a document link; first link moves NOT_STARTED → IN_PROGRESS. */
+export function canSaveTaskLink(
   profile: AppUser,
   patient: PatientAssignment,
   task: Pick<Task, "status">,
 ) {
-  if (task.status !== "NOT_STARTED") return false;
+  if (!OPEN_REP_STATUSES.has(task.status)) return false;
+  return canDoRepWorkflow(profile, patient);
+}
+
+/** Doctor/PT steps: paperwork sent out for external signature. */
+export function canShowSentForSignature(
+  profile: AppUser,
+  patient: PatientAssignment,
+  task: Pick<Task, "status" | "responsible_role">,
+) {
+  if (task.status !== "IN_PROGRESS") return false;
+  if (!isExternalFinalSignature(task.responsible_role)) return false;
   return canDoRepWorkflow(profile, patient);
 }
 

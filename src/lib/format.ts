@@ -3,6 +3,7 @@ import type { TaskStatus, ResponsibleRole } from "@/lib/db-types";
 export const STATUS_LABEL: Record<TaskStatus, string> = {
   NOT_STARTED: "Not started",
   IN_PROGRESS: "In progress",
+  AWAITING_SIGNATURE: "Awaiting signature",
   DONE_PENDING_REVIEW: "Pending ATP review",
   APPROVED: "Approved",
   BLOCKED: "Blocked",
@@ -11,6 +12,7 @@ export const STATUS_LABEL: Record<TaskStatus, string> = {
 export const STATUS_CLASS: Record<TaskStatus, string> = {
   NOT_STARTED: "bg-zinc-100 text-zinc-700",
   IN_PROGRESS: "bg-blue-100 text-blue-800",
+  AWAITING_SIGNATURE: "bg-violet-100 text-violet-800",
   DONE_PENDING_REVIEW: "bg-amber-100 text-amber-800",
   APPROVED: "bg-emerald-100 text-emerald-800",
   BLOCKED: "bg-red-100 text-red-800",

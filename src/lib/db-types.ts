@@ -20,6 +20,7 @@ export type PatientStatus =
 export type TaskStatus =
   | "NOT_STARTED"
   | "IN_PROGRESS"
+  | "AWAITING_SIGNATURE"
   | "DONE_PENDING_REVIEW"
   | "APPROVED"
   | "BLOCKED";

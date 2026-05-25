@@ -21,6 +21,7 @@ const QUEUE_WEIGHTS = {
   externalPartyWaiting: 50,
   pendingAtpReviewForApprover: 200,
   pendingAtpReview: 45,
+  awaitingSignature: 55,
   nearSubmission: 35,
   patientNextStep: 30,
   manualPriorityBase: 70,
@@ -318,6 +319,10 @@ function scoreDashboardTask(
     score += QUEUE_WEIGHTS.blocked;
   }
 
+  if (task.status === "AWAITING_SIGNATURE") {
+    score += QUEUE_WEIGHTS.awaitingSignature;
+  }
+
   if (EXTERNAL_WAITING_ROLES.has(task.responsible_role)) {
     score += QUEUE_WEIGHTS.externalPartyWaiting;
   }
@@ -346,7 +351,7 @@ function scoreDashboardTask(
 
   if (profile && patientCtx) {
     if (
-      task.status === "IN_PROGRESS" &&
+      (task.status === "IN_PROGRESS" || task.status === "AWAITING_SIGNATURE") &&
       (patientCtx.assigned_rep_id === profile.id ||
         (isSoloAtpRep(patientCtx) && patientCtx.assigned_rep_id === profile.id))
     ) {
