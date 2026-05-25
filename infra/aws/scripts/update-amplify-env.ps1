@@ -32,6 +32,7 @@ $proxyUrl = "$($AmplifyAppUrl.TrimEnd('/'))/supabase"
 $envVars = @{
   SUPABASE_INTERNAL_URL = $Ec2SupabaseUrl
   NEXT_PUBLIC_SUPABASE_URL = $proxyUrl
+  NEXT_PUBLIC_APP_URL = $AmplifyAppUrl.TrimEnd('/')
   NEXT_PUBLIC_SUPABASE_ANON_KEY = $AnonKey
   NEXT_PUBLIC_AUTH_AZURE_ENABLED = "false"
   NEXT_PUBLIC_AUTH_GOOGLE_ENABLED = "false"

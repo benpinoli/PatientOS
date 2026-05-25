@@ -3,12 +3,20 @@
 import { useEffect, useState, useTransition } from "react";
 import type { AppUser, Task } from "@/lib/db-types";
 import type { PatientAssignment } from "@/lib/task-permissions";
-import { canShowApproveButton, canShowMarkDone } from "@/lib/task-permissions";
+import {
+  canDoRepWorkflow,
+  canShowApproveButton,
+  canShowMarkDone,
+  canShowMarkDoneSigned,
+  canShowStartTask,
+} from "@/lib/task-permissions";
+import { normalizeExternalUrl } from "@/lib/urls";
 import {
   updateTaskStatus,
   setTaskPriority,
   completeTaskApproval,
   submitMarkDone,
+  submitMarkDoneSigned,
   fetchTaskLinkHistory,
   type TaskLinkEvent,
 } from "./actions";
@@ -33,6 +41,7 @@ function DocumentLinkPanel({
   disabled,
   pending,
   onSubmit,
+  linkOptional = false,
 }: {
   title: string;
   description: string;
@@ -46,8 +55,9 @@ function DocumentLinkPanel({
   disabled: boolean;
   pending: boolean;
   onSubmit: () => void;
+  linkOptional?: boolean;
 }) {
-  const ready = sentOtherMeans || linkDraft.trim().length > 0;
+  const ready = linkOptional || sentOtherMeans || linkDraft.trim().length > 0;
   const border =
     submitTone === "green"
       ? "border-emerald-200 bg-emerald-50/50"
@@ -75,18 +85,20 @@ function DocumentLinkPanel({
           className="mt-1.5 w-full rounded-lg border border-zinc-300 bg-white px-3 py-3 text-base shadow-sm"
         />
       </label>
-      <label className="flex min-h-11 items-center gap-3 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700">
-        <input
-          type="checkbox"
-          className="size-4 shrink-0"
-          checked={sentOtherMeans}
-          onChange={(e) => {
-            setSentOtherMeans(e.target.checked);
-            if (e.target.checked) setLinkDraft("");
-          }}
-        />
-        {checkboxLabel}
-      </label>
+      {!linkOptional && (
+        <label className="flex min-h-11 items-center gap-3 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700">
+          <input
+            type="checkbox"
+            className="size-4 shrink-0"
+            checked={sentOtherMeans}
+            onChange={(e) => {
+              setSentOtherMeans(e.target.checked);
+              if (e.target.checked) setLinkDraft("");
+            }}
+          />
+          {checkboxLabel}
+        </label>
+      )}
       <ActionButton
         disabled={pending || !ready || disabled}
         label={submitLabel}
@@ -94,7 +106,7 @@ function DocumentLinkPanel({
         fullWidth
         onClick={onSubmit}
       />
-      {!ready && (
+      {!ready && !linkOptional && (
         <p className="text-xs text-zinc-500">Add a link or check the box above to continue.</p>
       )}
     </div>
@@ -112,6 +124,9 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
   const isCard = layout === "card";
   const showApprove = canShowApproveButton(profile, patient, task);
   const showMarkDone = canShowMarkDone(profile, patient, task);
+  const showMarkDoneSigned = canShowMarkDoneSigned(profile, patient, task);
+  const showStart = canShowStartTask(profile, patient, task);
+  const repWorkflow = canDoRepWorkflow(profile, patient);
 
   useEffect(() => {
     if (!showHistory) return;
@@ -169,6 +184,18 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
       }
     });
 
+  const onMarkDoneSigned = () =>
+    start(async () => {
+      setError(null);
+      try {
+        await submitMarkDoneSigned(task.id, {
+          link: linkDraft.trim() || null,
+        });
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Could not sign off");
+      }
+    });
+
   return (
     <div
       className={
@@ -188,7 +215,7 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
           (isCard ? "justify-stretch" : "justify-end")
         }
       >
-        {task.status === "NOT_STARTED" && (
+        {showStart && (
           <ActionButton
             disabled={pending}
             label="Start"
@@ -197,7 +224,12 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
             onClick={() => flip("IN_PROGRESS")}
           />
         )}
-        {task.status !== "BLOCKED" && task.status !== "APPROVED" && !showMarkDone && !showApprove && (
+        {task.status !== "BLOCKED" &&
+          task.status !== "APPROVED" &&
+          repWorkflow &&
+          !showMarkDone &&
+          !showMarkDoneSigned &&
+          !showApprove && (
           <ActionButton
             disabled={pending}
             label="Block"
@@ -223,6 +255,24 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
           onClick={() => setShowHistory((s) => !s)}
         />
       </div>
+
+      {showMarkDoneSigned && (
+        <DocumentLinkPanel
+          title="Mark as done (signed)"
+          description="You are the rep and ATP on this case. Sign off when the paperwork is complete. You may add a document link."
+          linkDraft={linkDraft}
+          setLinkDraft={setLinkDraft}
+          sentOtherMeans={false}
+          setSentOtherMeans={() => {}}
+          checkboxLabel=""
+          submitLabel="Mark as done (signed)"
+          submitTone="amber"
+          disabled={false}
+          pending={pending}
+          onSubmit={onMarkDoneSigned}
+          linkOptional
+        />
+      )}
 
       {showMarkDone && (
         <DocumentLinkPanel
@@ -291,10 +341,11 @@ export function LatestLinkCell({
   task: Task;
   variant?: "table" | "card";
 }) {
-  if (task.link) {
+  const href = normalizeExternalUrl(task.link);
+  if (href) {
     return (
       <a
-        href={task.link}
+        href={href}
         target="_blank"
         rel="noopener noreferrer"
         className={
@@ -396,7 +447,7 @@ function LinkHistoryMenu({
                 <span className="text-zinc-700">Document already sent / other means</span>
               ) : (
                 <a
-                  href={e.link!}
+                  href={normalizeExternalUrl(e.link)!}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="break-all font-medium text-blue-600 hover:underline"

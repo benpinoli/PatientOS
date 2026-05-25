@@ -6,9 +6,11 @@ import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import type { TaskStatus, AppUser } from "@/lib/db-types";
 import { DEFAULT_DUE_DAYS } from "@/lib/constants";
+import { normalizeExternalUrl } from "@/lib/urls";
 import {
   canApproveAtpReview,
   canShowMarkDone,
+  canShowMarkDoneSigned,
   type PatientAssignment,
 } from "@/lib/task-permissions";
 
@@ -141,17 +143,50 @@ export async function submitMarkDone(
   }
 
   const trimmed = requireLinkOrOtherMeans(opts.link, opts.sentOtherMeans);
+  const normalized = normalizeExternalUrl(trimmed);
   const nextStatus: TaskStatus = opts.requiresAtpReview
     ? "DONE_PENDING_REVIEW"
     : "APPROVED";
 
   const patch: { status: TaskStatus; link?: string | null } = { status: nextStatus };
-  if (trimmed) patch.link = trimmed;
+  if (normalized) patch.link = normalized;
 
   const { error } = await supabase.from("tasks").update(patch).eq("id", taskId);
   if (error) throw new Error(error.message);
 
-  await recordLinkEvent(supabase, taskId, userId, trimmed, opts.sentOtherMeans);
+  await recordLinkEvent(
+    supabase,
+    taskId,
+    userId,
+    normalized ?? "",
+    opts.sentOtherMeans,
+  );
+  revalidatePath("/", "layout");
+}
+
+/** Solo ATP-rep: sign off directly; link optional. */
+export async function submitMarkDoneSigned(
+  taskId: string,
+  opts: { link: string | null },
+) {
+  const supabase = await getSupabaseServer();
+  const { userId, profile, task, patient } = await loadTaskContext(supabase, taskId);
+
+  if (!canShowMarkDoneSigned(profile, patient, task)) {
+    throw new Error("You cannot sign off on this task.");
+  }
+
+  const normalized = normalizeExternalUrl(opts.link?.trim() ?? "");
+
+  const patch: { status: TaskStatus; link?: string | null } = { status: "APPROVED" };
+  if (normalized) patch.link = normalized;
+
+  const { error } = await supabase.from("tasks").update(patch).eq("id", taskId);
+  if (error) throw new Error(error.message);
+
+  if (normalized) {
+    await recordLinkEvent(supabase, taskId, userId, normalized, false);
+  }
   revalidatePath("/", "layout");
 }
 
@@ -174,14 +209,21 @@ export async function completeTaskApproval(
   }
 
   const trimmed = requireLinkOrOtherMeans(opts.link, opts.sentOtherMeans);
+  const normalized = normalizeExternalUrl(trimmed);
 
   const patch: { status: TaskStatus; link?: string | null } = { status: "APPROVED" };
-  if (trimmed) patch.link = trimmed;
+  if (normalized) patch.link = normalized;
 
   const { error } = await supabase.from("tasks").update(patch).eq("id", taskId);
   if (error) throw new Error(error.message);
 
-  await recordLinkEvent(supabase, taskId, userId, trimmed, opts.sentOtherMeans);
+  await recordLinkEvent(
+    supabase,
+    taskId,
+    userId,
+    normalized ?? "",
+    opts.sentOtherMeans,
+  );
   revalidatePath("/", "layout");
 }
 

@@ -16,6 +16,7 @@ export function LoginForm({
   const supabase = getSupabaseBrowser();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(true);
   const [busy, setBusy] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
 
@@ -111,6 +112,15 @@ export function LoginForm({
             onChange={(e) => setPassword(e.target.value)}
             className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
           />
+          <label className="flex items-center gap-2 text-sm text-zinc-600">
+            <input
+              type="checkbox"
+              className="size-4"
+              checked={rememberMe}
+              onChange={(e) => setRememberMe(e.target.checked)}
+            />
+            Stay signed in on this device
+          </label>
           <button
             type="submit"
             disabled={busy}
@@ -119,8 +129,9 @@ export function LoginForm({
             Sign in with password
           </button>
           <p className="text-xs text-zinc-400">
-            Seed users: deanne / matt / steve / tara / jack @ choice.example
-            (password <code>password123</code>).
+            Sessions are kept in your browser for about 30 days when &quot;Stay signed in&quot; is
+            checked. Seed users: deanne / matt / steve / tara / jack @ choice.example (password{" "}
+            <code>password123</code>).
           </p>
         </form>
       )}
