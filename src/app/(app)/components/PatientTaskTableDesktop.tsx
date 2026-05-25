@@ -22,7 +22,7 @@ export function PatientTaskTableDesktop({
             <tr>
               <th className="w-10 px-4 py-2.5">#</th>
               <th className="px-4 py-2.5">Task</th>
-              <th className="px-4 py-2.5">Awaiting</th>
+              <th className="px-4 py-2.5">Final signature</th>
               <th className="px-4 py-2.5">Due</th>
               <th className="px-4 py-2.5">Status</th>
               <th className="px-4 py-2.5">Latest link</th>

@@ -94,7 +94,7 @@ export function TaskWorkCard({
 
       <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
         <div>
-          <dt className="font-medium uppercase tracking-wide text-zinc-400">Awaiting</dt>
+          <dt className="font-medium uppercase tracking-wide text-zinc-400">Final signature</dt>
           <dd className="mt-0.5 text-zinc-800">{ROLE_LABEL[task.responsible_role]}</dd>
         </div>
         <div>

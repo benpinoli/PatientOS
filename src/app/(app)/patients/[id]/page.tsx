@@ -63,7 +63,7 @@ export default async function PatientDetailPage({
         </div>
         {nextStep && (
           <div className="mt-1 text-sm text-zinc-500">
-            Awaiting: {ROLE_LABEL[nextStep.responsible_role]} · Status:{" "}
+            Final signature: {ROLE_LABEL[nextStep.responsible_role]} · Status:{" "}
             {STATUS_LABEL[nextStep.status]}
             {nextStep.requires_atp_review && " · Requires ATP review"}
           </div>

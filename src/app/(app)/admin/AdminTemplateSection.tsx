@@ -173,7 +173,7 @@ export function AdminTemplateSection({
             <tr>
               <th className="w-20 px-3 py-2">#</th>
               <th className="min-w-[12rem] px-3 py-2">Label</th>
-              <th className="px-3 py-2">Awaiting</th>
+              <th className="px-3 py-2">Final signature</th>
               <th className="px-3 py-2">ATP review</th>
               <th className="px-3 py-2">Required</th>
               {canEdit && <th className="w-36 px-3 py-2 text-right">Actions</th>}

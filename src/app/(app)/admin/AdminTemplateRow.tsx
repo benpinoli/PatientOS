@@ -148,7 +148,7 @@ export function AdminTemplateRow({
           </p>
           <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
             <div>
-              <dt className="font-medium uppercase text-zinc-400">Awaiting</dt>
+              <dt className="font-medium uppercase text-zinc-400">Final signature</dt>
               <dd className="mt-0.5 text-zinc-700">
                 {ROLE_LABEL[template.responsible_role]}
               </dd>
@@ -288,7 +288,7 @@ export function AdminTemplateRow({
           </div>
           <div className="min-w-0 flex-1 space-y-3">
             <TemplateField label="Label">{labelInput}</TemplateField>
-            <TemplateField label="Awaiting">{roleSelect}</TemplateField>
+            <TemplateField label="Final signature">{roleSelect}</TemplateField>
             <div className="flex flex-wrap gap-4">
               {atpReviewCheck}
               {requiredCheck}
