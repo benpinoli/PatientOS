@@ -6,6 +6,7 @@ import {
   isAtpBlockedUntilRepStarts,
   isRepAwaitingAtpReview,
   isSoloAtpRep,
+  isUserInvolvedOnPatient,
   type PatientAssignment,
 } from "@/lib/task-permissions";
 
@@ -151,9 +152,13 @@ function patientAssignment(row: DashboardRow): PatientAssignment {
   };
 }
 
-/** Top 5 = work the user can do now; pending review is a separate bucket for reps. */
+/** Top 5 = personal caseload only (assigned rep or ATP), not team rollup. */
 function isActionableInTopFive(row: DashboardRow, profile: AppUser) {
   const patient = patientAssignment(row);
+
+  if (!isUserInvolvedOnPatient(patient, profile.id)) {
+    return false;
+  }
 
   if (isRepAwaitingAtpReview(profile, patient, row)) {
     return false;
