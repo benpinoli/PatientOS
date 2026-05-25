@@ -56,7 +56,6 @@ export type DashboardPatientGroup = {
 
 export type DashboardBundle = {
   topFive: DashboardRow[];
-  pendingAtpReview: DashboardRow[];
   allPatients: DashboardPatientGroup[];
 };
 
@@ -172,19 +171,13 @@ function partitionDashboardRows(rows: DashboardRow[], profile: AppUser) {
     rows as unknown as RawDashboardTask[],
   );
 
-  const pendingAtpReview = sortIntelligentQueue(
-    rows.filter((r) => isRepAwaitingAtpReview(profile, patientAssignment(r), r)),
-    contextByPatient,
-    profile,
-  );
-
   const actionable = rows.filter((r) => isActionableInTopFive(r, profile));
   const topFive = sortIntelligentQueue(actionable, contextByPatient, profile).slice(
     0,
     5,
   );
 
-  return { topFive, pendingAtpReview };
+  return { topFive };
 }
 
 export async function fetchDashboardBundle(
@@ -215,7 +208,7 @@ export async function fetchDashboardBundle(
       };
     });
 
-  const { topFive, pendingAtpReview } = partitionDashboardRows(rows, profile);
+  const { topFive } = partitionDashboardRows(rows, profile);
 
   const { data: patients, error } = await supabase
     .from("patients")
@@ -267,7 +260,7 @@ export async function fetchDashboardBundle(
     };
   });
 
-  return { topFive, pendingAtpReview, allPatients };
+  return { topFive, allPatients };
 }
 
 export { isUserInvolvedOnPatient as isPatientAssignedToUser } from "@/lib/task-permissions";
