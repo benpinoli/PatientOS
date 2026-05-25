@@ -67,7 +67,7 @@ export default async function AdminPage() {
         <h2 className="text-lg font-semibold text-zinc-900">Task templates</h2>
         <p className="text-sm text-zinc-500">
           {canEditTemplates
-            ? "Edit the master checklist per payer type. Changes apply to new patients only — existing cases keep their snapshotted tasks."
+            ? "Edit steps and drag to reorder (numbers update automatically). New patients only — existing cases keep snapshotted tasks."
             : "View-only. Managers and bosses can edit templates."}
         </p>
         <AdminTaskTemplates byType={byType} canEdit={canEditTemplates} />

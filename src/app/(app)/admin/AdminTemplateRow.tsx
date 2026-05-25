@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, type ReactNode } from "react";
+import { useState, useTransition, type DragEvent, type ReactNode } from "react";
 import type { ResponsibleRole, TaskTemplate } from "@/lib/db-types";
 import { ROLE_LABEL } from "@/lib/format";
 import { updateTaskTemplate } from "../actions";
@@ -30,23 +30,83 @@ function TemplateField({
   );
 }
 
+function OrderBadge({ n }: { n: number }) {
+  return (
+    <span className="inline-flex size-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-sm font-semibold text-zinc-700">
+      {n}
+    </span>
+  );
+}
+
+function DragHandle({ onDragStart }: { onDragStart: (e: DragEvent) => void }) {
+  return (
+    <span
+      draggable
+      onDragStart={(e) => {
+        e.stopPropagation();
+        e.dataTransfer.effectAllowed = "move";
+        onDragStart(e);
+      }}
+      className="inline-flex cursor-grab touch-none items-center justify-center rounded px-1 text-zinc-400 active:cursor-grabbing"
+      aria-label="Drag to reorder"
+      title="Drag to reorder"
+    >
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+        <circle cx="5" cy="4" r="1.25" />
+        <circle cx="11" cy="4" r="1.25" />
+        <circle cx="5" cy="8" r="1.25" />
+        <circle cx="11" cy="8" r="1.25" />
+        <circle cx="5" cy="12" r="1.25" />
+        <circle cx="11" cy="12" r="1.25" />
+      </svg>
+    </span>
+  );
+}
+
 export function AdminTemplateRow({
   template,
+  orderNumber,
   canEdit,
   variant = "table",
+  draggable = false,
+  isDragging = false,
+  onDragStart,
+  onDragOver,
+  onDrop,
 }: {
   template: TaskTemplate;
+  orderNumber: number;
   canEdit: boolean;
   variant?: "table" | "card";
+  draggable?: boolean;
+  isDragging?: boolean;
+  onDragStart?: () => void;
+  onDragOver?: (e: React.DragEvent) => void;
+  onDrop?: () => void;
 }) {
   const [pending, start] = useTransition();
   const [label, setLabel] = useState(template.label);
   const [responsibleRole, setResponsibleRole] = useState(template.responsible_role);
   const [requiresAtpReview, setRequiresAtpReview] = useState(template.requires_atp_review);
   const [required, setRequired] = useState(template.required);
-  const [defaultOrder, setDefaultOrder] = useState(String(template.default_order));
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const dropProps = draggable
+    ? {
+        onDragOver: (e: DragEvent) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          onDragOver?.(e);
+        },
+        onDrop: (e: DragEvent) => {
+          e.preventDefault();
+          onDrop?.();
+        },
+      }
+    : {};
+
+  const handleDragStart = () => onDragStart?.();
 
   const save = () =>
     start(async () => {
@@ -57,7 +117,6 @@ export function AdminTemplateRow({
           responsible_role: responsibleRole,
           requires_atp_review: requiresAtpReview,
           required,
-          default_order: Number(defaultOrder),
         });
         setSaved(true);
         setTimeout(() => setSaved(false), 1200);
@@ -71,7 +130,7 @@ export function AdminTemplateRow({
       return (
         <li className="px-4 py-3">
           <p className="text-sm font-medium text-zinc-900">
-            <span className="text-zinc-400">#{template.default_order}</span> {template.label}
+            <span className="text-zinc-400">#{orderNumber}</span> {template.label}
           </p>
           <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
             <div>
@@ -96,7 +155,7 @@ export function AdminTemplateRow({
     }
     return (
       <tr>
-        <td className="px-4 py-2 text-xs text-zinc-500">{template.default_order}</td>
+        <td className="px-4 py-2 text-xs text-zinc-500">{orderNumber}</td>
         <td className="px-4 py-2 text-zinc-800">{template.label}</td>
         <td className="px-4 py-2 text-xs text-zinc-500">
           {ROLE_LABEL[template.responsible_role]}
@@ -108,19 +167,6 @@ export function AdminTemplateRow({
       </tr>
     );
   }
-
-  const orderInput = (
-    <input
-      type="number"
-      min={1}
-      value={defaultOrder}
-      onChange={(e) => setDefaultOrder(e.target.value)}
-      className={
-        "rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm " +
-        (variant === "card" ? "min-h-11 w-20" : "w-16")
-      }
-    />
-  );
 
   const labelInput = (
     <input
@@ -189,33 +235,43 @@ export function AdminTemplateRow({
     </button>
   );
 
+  const rowClass =
+    (variant === "card"
+      ? "border-b border-zinc-100 px-4 py-4 last:border-0 "
+      : "hover:bg-zinc-50 ") +
+    (isDragging ? "opacity-40" : "");
+
   if (variant === "card") {
     return (
-      <li className="border-b border-zinc-100 px-4 py-4 last:border-0">
-        <div className="space-y-3">
-          <div className="flex items-start gap-3">
-            <TemplateField label="Order">{orderInput}</TemplateField>
-            <div className="min-w-0 flex-1">
-              <TemplateField label="Label">{labelInput}</TemplateField>
+      <li className={rowClass} {...dropProps}>
+        <div className="flex gap-3">
+          <div className="flex flex-col items-center gap-1 pt-1">
+            {draggable && <DragHandle onDragStart={handleDragStart} />}
+            <OrderBadge n={orderNumber} />
+          </div>
+          <div className="min-w-0 flex-1 space-y-3">
+            <TemplateField label="Label">{labelInput}</TemplateField>
+            <TemplateField label="Awaiting">{roleSelect}</TemplateField>
+            <div className="flex flex-wrap gap-4">
+              {atpReviewCheck}
+              {requiredCheck}
             </div>
+            {error && <p className="text-sm text-red-700">{error}</p>}
+            {saveButton}
           </div>
-          <TemplateField label="Awaiting">{roleSelect}</TemplateField>
-          <div className="flex flex-wrap gap-4">
-            {atpReviewCheck}
-            {requiredCheck}
-          </div>
-          {error && (
-            <p className="text-sm text-red-700">{error}</p>
-          )}
-          {saveButton}
         </div>
       </li>
     );
   }
 
   return (
-    <tr className="hover:bg-zinc-50">
-      <td className="px-3 py-2 align-top">{orderInput}</td>
+    <tr className={rowClass} {...dropProps}>
+      <td className="px-3 py-2 align-top">
+        <div className="flex items-center gap-1">
+          {draggable && <DragHandle onDragStart={handleDragStart} />}
+          <OrderBadge n={orderNumber} />
+        </div>
+      </td>
       <td className="px-3 py-2 align-top">{labelInput}</td>
       <td className="px-3 py-2 align-top">{roleSelect}</td>
       <td className="px-3 py-2 align-top">{atpReviewCheck}</td>

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { getSupabaseServer } from "@/lib/supabase/server";
-import type { ResponsibleRole, TaskStatus, AppUser } from "@/lib/db-types";
+import type { PayerType, ResponsibleRole, TaskStatus, AppUser } from "@/lib/db-types";
 import { DEFAULT_DUE_DAYS } from "@/lib/constants";
 import { normalizeExternalUrl } from "@/lib/urls";
 import {
@@ -347,18 +347,12 @@ export async function updateTaskTemplate(
     responsible_role: ResponsibleRole;
     requires_atp_review: boolean;
     required: boolean;
-    default_order: number;
   },
 ) {
   const supabase = await requireTemplateEditor();
 
   const label = patch.label.trim();
   if (!label) throw new Error("Label is required.");
-
-  const order = Math.round(patch.default_order);
-  if (!Number.isFinite(order) || order < 1) {
-    throw new Error("Order must be a positive number.");
-  }
 
   const { error } = await supabase
     .from("task_templates")
@@ -367,10 +361,32 @@ export async function updateTaskTemplate(
       responsible_role: patch.responsible_role,
       requires_atp_review: patch.requires_atp_review,
       required: patch.required,
-      default_order: order,
     })
     .eq("id", templateId);
 
   if (error) throw new Error(error.message);
+  revalidatePath("/admin");
+}
+
+/** Persist drag-and-drop order (1..n) for one payer type. */
+export async function reorderTaskTemplates(
+  payerType: PayerType,
+  orderedTemplateIds: string[],
+) {
+  const supabase = await requireTemplateEditor();
+  if (orderedTemplateIds.length === 0) return;
+
+  const updates = orderedTemplateIds.map((id, index) =>
+    supabase
+      .from("task_templates")
+      .update({ default_order: index + 1 })
+      .eq("id", id)
+      .eq("payer_type", payerType),
+  );
+
+  const results = await Promise.all(updates);
+  const failed = results.find((r) => r.error);
+  if (failed?.error) throw new Error(failed.error.message);
+
   revalidatePath("/admin");
 }
