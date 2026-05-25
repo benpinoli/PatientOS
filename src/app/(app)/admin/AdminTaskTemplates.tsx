@@ -1,5 +1,5 @@
 import type { PayerTypeRecord, TaskTemplate } from "@/lib/db-types";
-import { payerTypeSectionTitle } from "@/lib/payer-types";
+import { isBuiltInPayerType, payerTypeSectionTitle } from "@/lib/payer-types";
 import { AdminAddPayerTypeForm } from "./AdminAddPayerTypeForm";
 import { AdminTemplateSection } from "./AdminTemplateSection";
 
@@ -25,7 +25,7 @@ export function AdminTaskTemplates({
             title={payerTypeSectionTitle(pt)}
             initialTemplates={byType[pt.code] ?? []}
             canEdit={canEdit}
-            canDeleteType={canEdit}
+            canDeleteType={canEdit && !isBuiltInPayerType(pt.code)}
           />
         ))
       )}

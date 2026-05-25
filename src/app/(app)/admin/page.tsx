@@ -18,7 +18,7 @@ export default async function AdminPage() {
   const [{ data: users }, { data: templates }, payerTypes] = await Promise.all([
     supabase.from("app_users").select("*").order("full_name"),
     supabase.from("task_templates").select("*").order("payer_type").order("default_order"),
-    fetchPayerTypes(supabase).catch(() => []),
+    fetchPayerTypes(supabase),
   ]);
 
   const allUsers = users ?? [];

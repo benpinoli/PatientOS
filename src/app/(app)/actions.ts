@@ -5,7 +5,10 @@ import { redirect } from "next/navigation";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
-import { normalizePayerTypeCode } from "@/lib/payer-types";
+import {
+  isBuiltInPayerType,
+  normalizePayerTypeCode,
+} from "@/lib/payer-types";
 import type { AppUser, PayerType, ResponsibleRole, TaskStatus } from "@/lib/db-types";
 import { DEFAULT_DUE_DAYS } from "@/lib/constants";
 import { normalizeExternalUrl } from "@/lib/urls";
@@ -575,6 +578,12 @@ export async function createPayerType(displayName: string) {
 
 export async function deletePayerType(code: PayerType) {
   const supabase = await requireTemplateEditor();
+
+  if (isBuiltInPayerType(code)) {
+    throw new Error(
+      "Insurance, Medicaid, and Medicare are built-in types and cannot be deleted.",
+    );
+  }
 
   const { data: payers, error: payersErr } = await supabase
     .from("payers")

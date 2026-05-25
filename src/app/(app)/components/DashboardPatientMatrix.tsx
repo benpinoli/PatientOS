@@ -1,7 +1,11 @@
 import Link from "next/link";
 import type { PayerTypeRecord, Task } from "@/lib/db-types";
 import type { DashboardPatientGroup } from "@/lib/queries";
-import { payerTypeMatrixDescription, payerTypeMatrixTitle } from "@/lib/payer-types";
+import {
+  DEFAULT_PAYER_TYPES,
+  payerTypeMatrixDescription,
+  payerTypeMatrixTitle,
+} from "@/lib/payer-types";
 import { STATUS_CLASS, STATUS_LABEL, formatDate, isOverdue } from "@/lib/format";
 
 type MatrixColumn = {
@@ -152,13 +156,12 @@ function PatientMatrixTable({ groups }: { groups: DashboardPatientGroup[] }) {
 
 export function DashboardPatientMatrix({
   groups,
-  payerTypes = FALLBACK_PAYER_TYPES,
+  payerTypes = DEFAULT_PAYER_TYPES,
 }: {
   groups: DashboardPatientGroup[];
   payerTypes?: PayerTypeRecord[];
 }) {
-  const tables =
-    payerTypes.length > 0 ? payerTypes : FALLBACK_PAYER_TYPES;
+  const tables = payerTypes.length > 0 ? payerTypes : DEFAULT_PAYER_TYPES;
   if (groups.length === 0) {
     return (
       <div className="rounded-md border border-dashed border-zinc-300 bg-white p-6 text-center text-sm text-zinc-500">

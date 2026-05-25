@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Task, Patient, AppUser, PayerType, PayerTypeRecord } from "@/lib/db-types";
+import { mergePayerTypes } from "@/lib/payer-types";
 import {
   canApproveAtpReview,
   canShowApproveButton,
@@ -389,13 +390,17 @@ export async function fetchPatientWithTasks(supabase: SB, patientId: string) {
 }
 
 export async function fetchPayerTypes(supabase: SB): Promise<PayerTypeRecord[]> {
-  const { data, error } = await supabase
-    .from("payer_types")
-    .select("code, display_name, sort_order")
-    .order("sort_order")
-    .order("display_name");
-  if (error) throw error;
-  return (data ?? []) as PayerTypeRecord[];
+  try {
+    const { data, error } = await supabase
+      .from("payer_types")
+      .select("code, display_name, sort_order")
+      .order("sort_order")
+      .order("display_name");
+    if (error) throw error;
+    return mergePayerTypes((data ?? []) as PayerTypeRecord[]);
+  } catch {
+    return mergePayerTypes([]);
+  }
 }
 
 export function computeNextStep(tasks: Task[]) {

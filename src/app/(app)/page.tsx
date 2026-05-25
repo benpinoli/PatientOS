@@ -9,7 +9,7 @@ export default async function DashboardPage() {
   const { supabase, profile } = await requireUser();
   const [{ topFive, allPatients }, payerTypes] = await Promise.all([
     fetchDashboardBundle(supabase, profile),
-    fetchPayerTypes(supabase).catch(() => []),
+    fetchPayerTypes(supabase),
   ]);
 
   return (
