@@ -1,7 +1,13 @@
 import Link from "next/link";
 import type { AppUser } from "@/lib/db-types";
 import type { DashboardRow } from "@/lib/queries";
-import { STATUS_LABEL, STATUS_CLASS, isOverdue, formatDate, ROLE_LABEL } from "@/lib/format";
+import {
+  getTaskStatusClass,
+  getTaskStatusLabel,
+  isOverdue,
+  formatDate,
+  ROLE_LABEL,
+} from "@/lib/format";
 import { TaskActions, LatestLinkCell } from "../TaskActions";
 
 export function TaskQueueTableDesktop({
@@ -68,10 +74,10 @@ export function TaskQueueTableDesktop({
                     <span
                       className={
                         "inline-block rounded px-2 py-0.5 text-xs font-medium " +
-                        STATUS_CLASS[r.status]
+                        getTaskStatusClass(r.status)
                       }
                     >
-                      {STATUS_LABEL[r.status]}
+                      {getTaskStatusLabel(r.status)}
                     </span>
                   </td>
                   <td className="max-w-[12rem] px-4 py-3">

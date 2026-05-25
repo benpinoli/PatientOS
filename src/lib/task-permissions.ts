@@ -79,14 +79,11 @@ export function canWorkOnPatient(profile: AppUser, patient: PatientAssignment) {
   );
 }
 
-/** Rep-side work: start tasks, mark done with link (not ATP-only reviewers). */
+/** Rep-side work on this case (assigned rep only; managers act on their own caseload). */
 export function canDoRepWorkflow(profile: AppUser, patient: PatientAssignment) {
   if (isAtpOnlyReviewer(profile, patient)) return false;
-  return (
-    hasRole(profile, "BOSS") ||
-    hasRole(profile, "MANAGER") ||
-    patient.assigned_rep_id === profile.id
-  );
+  if (hasRole(profile, "BOSS")) return true;
+  return patient.assigned_rep_id === profile.id;
 }
 
 /** ATP sign-off on pending-review tasks (matches DB trigger). */
@@ -152,7 +149,7 @@ export function canSaveTaskLink(
   return canDoRepWorkflow(profile, patient);
 }
 
-/** Doctor/PT steps: paperwork sent out for external signature. */
+/** Doctor/PT steps: assigned rep sent paperwork out for external signature. */
 export function canShowSentForSignature(
   profile: AppUser,
   patient: PatientAssignment,
@@ -160,7 +157,7 @@ export function canShowSentForSignature(
 ) {
   if (task.status !== "IN_PROGRESS") return false;
   if (!isExternalFinalSignature(task.responsible_role)) return false;
-  return canDoRepWorkflow(profile, patient);
+  return patient.assigned_rep_id === profile.id;
 }
 
 /** Rep submitted work; waiting on assigned ATP (not actionable for rep). */

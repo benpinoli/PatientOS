@@ -119,6 +119,19 @@ function requireLinkOrOtherMeans(link: string | null, sentOtherMeans: boolean) {
   return trimmed;
 }
 
+function wrapTaskMutationError(error: { message: string }) {
+  const msg = error.message ?? "";
+  if (
+    msg.includes("tasks_status_check") ||
+    msg.includes("AWAITING_SIGNATURE")
+  ) {
+    throw new Error(
+      "The database does not support “Awaiting signature” yet. Run migration 0011_task_awaiting_signature_status.sql on the server, then try again.",
+    );
+  }
+  throw new Error(msg);
+}
+
 async function recordLinkEvent(
   supabase: Awaited<ReturnType<typeof getSupabaseServer>>,
   taskId: string,
@@ -188,7 +201,7 @@ export async function submitSentForSignature(taskId: string) {
     })
     .eq("id", taskId);
 
-  if (error) throw new Error(error.message);
+  if (error) wrapTaskMutationError(error);
   revalidatePath("/", "layout");
 }
 

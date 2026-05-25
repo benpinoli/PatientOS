@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/server-helpers";
 import { fetchPatientWithTasks, computeNextStep } from "@/lib/queries";
-import { STATUS_LABEL, ROLE_LABEL } from "@/lib/format";
+import { getTaskStatusLabel, ROLE_LABEL } from "@/lib/format";
 import { PatientTaskListResponsive } from "../../components/PatientTaskListResponsive";
 
 export const dynamic = "force-dynamic";
@@ -64,7 +64,7 @@ export default async function PatientDetailPage({
         {nextStep && (
           <div className="mt-1 text-sm text-zinc-500">
             Final signature: {ROLE_LABEL[nextStep.responsible_role]} · Status:{" "}
-            {STATUS_LABEL[nextStep.status]}
+            {getTaskStatusLabel(nextStep.status)}
             {nextStep.requires_atp_review && " · Requires ATP review"}
           </div>
         )}

@@ -6,7 +6,7 @@ import {
   payerTypeMatrixDescription,
   payerTypeMatrixTitle,
 } from "@/lib/payer-types";
-import { STATUS_CLASS, STATUS_LABEL, formatDate, isOverdue } from "@/lib/format";
+import { getTaskStatusClass, getTaskStatusLabel, formatDate, isOverdue } from "@/lib/format";
 
 type MatrixColumn = {
   key: string;
@@ -135,11 +135,11 @@ function PatientMatrixTable({ groups }: { groups: DashboardPatientGroup[] }) {
                         <div
                           className={
                             "flex min-h-[2.75rem] items-center justify-center rounded-md px-1.5 py-1.5 text-center text-[10px] font-semibold leading-tight " +
-                            STATUS_CLASS[task.status]
+                            getTaskStatusClass(task.status)
                           }
-                          title={`${task.label}: ${STATUS_LABEL[task.status]}`}
+                          title={`${task.label}: ${getTaskStatusLabel(task.status)}`}
                         >
-                          {STATUS_LABEL[task.status]}
+                          {getTaskStatusLabel(task.status)}
                         </div>
                       </td>
                     );

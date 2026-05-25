@@ -18,6 +18,21 @@ export const STATUS_CLASS: Record<TaskStatus, string> = {
   BLOCKED: "bg-red-100 text-red-800",
 };
 
+/** Safe labels when DB has a status the deployed app does not know yet. */
+export function getTaskStatusLabel(status: string): string {
+  if (status in STATUS_LABEL) {
+    return STATUS_LABEL[status as TaskStatus];
+  }
+  return status.replace(/_/g, " ").toLowerCase();
+}
+
+export function getTaskStatusClass(status: string): string {
+  if (status in STATUS_CLASS) {
+    return STATUS_CLASS[status as TaskStatus];
+  }
+  return "bg-zinc-100 text-zinc-700";
+}
+
 export const ROLE_LABEL: Record<ResponsibleRole, string> = {
   DOCTOR: "Doctor",
   PT: "PT",

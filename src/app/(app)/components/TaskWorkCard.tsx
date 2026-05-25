@@ -1,7 +1,13 @@
 import Link from "next/link";
 import type { AppUser, Task } from "@/lib/db-types";
 import type { PatientAssignment } from "@/lib/task-permissions";
-import { STATUS_LABEL, STATUS_CLASS, ROLE_LABEL, isOverdue, formatDate } from "@/lib/format";
+import {
+  getTaskStatusClass,
+  getTaskStatusLabel,
+  ROLE_LABEL,
+  isOverdue,
+  formatDate,
+} from "@/lib/format";
 import { TaskActions, LatestLinkCell } from "../TaskActions";
 
 export type TaskWorkCardProps = {
@@ -69,10 +75,11 @@ export function TaskWorkCard({
           <div className="mt-2 flex flex-wrap gap-2">
             <span
               className={
-                "inline-block rounded px-2 py-0.5 text-xs font-medium " + STATUS_CLASS[task.status]
+                "inline-block rounded px-2 py-0.5 text-xs font-medium " +
+                getTaskStatusClass(task.status)
               }
             >
-              {STATUS_LABEL[task.status]}
+              {getTaskStatusLabel(task.status)}
             </span>
             {task.requires_atp_review && (
               <span className="inline-block rounded bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600">

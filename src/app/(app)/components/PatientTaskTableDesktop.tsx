@@ -1,6 +1,12 @@
 import type { AppUser, Task } from "@/lib/db-types";
 import type { PatientAssignment } from "@/lib/task-permissions";
-import { STATUS_LABEL, STATUS_CLASS, ROLE_LABEL, isOverdue, formatDate } from "@/lib/format";
+import {
+  getTaskStatusClass,
+  getTaskStatusLabel,
+  ROLE_LABEL,
+  isOverdue,
+  formatDate,
+} from "@/lib/format";
 import { TaskActions, LatestLinkCell } from "../TaskActions";
 
 export function PatientTaskTableDesktop({
@@ -62,10 +68,10 @@ export function PatientTaskTableDesktop({
                     <span
                       className={
                         "inline-block rounded px-2 py-0.5 text-xs font-medium " +
-                        STATUS_CLASS[t.status]
+                        getTaskStatusClass(t.status)
                       }
                     >
-                      {STATUS_LABEL[t.status]}
+                      {getTaskStatusLabel(t.status)}
                     </span>
                   </td>
                   <td className="max-w-[12rem] px-4 py-3">

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import type { AppUser, Task } from "@/lib/db-types";
 import type { PatientAssignment } from "@/lib/task-permissions";
 import {
@@ -117,6 +118,7 @@ function DocumentLinkPanel({
 }
 
 export function TaskActions({ task, profile, patient, layout = "table" }: TaskActionsProps) {
+  const router = useRouter();
   const [pending, start] = useTransition();
   const [showHistory, setShowHistory] = useState(false);
   const [history, setHistory] = useState<TaskLinkEvent[] | null>(null);
@@ -149,11 +151,14 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
     return () => document.removeEventListener("keydown", onKey);
   }, [showHistory]);
 
+  const afterMutation = () => router.refresh();
+
   const flip = (status: Task["status"]) =>
     start(async () => {
       setError(null);
       try {
         await updateTaskStatus(task.id, status);
+        afterMutation();
       } catch (e) {
         setError(e instanceof Error ? e.message : "Update failed");
       }
@@ -168,6 +173,7 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
           sentOtherMeans,
         });
         setSentOtherMeans(false);
+        afterMutation();
       } catch (e) {
         setError(e instanceof Error ? e.message : "Could not mark done");
       }
@@ -182,6 +188,7 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
           sentOtherMeans,
         });
         setSentOtherMeans(false);
+        afterMutation();
       } catch (e) {
         setError(e instanceof Error ? e.message : "Approval failed");
       }
@@ -194,6 +201,7 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
         await submitMarkDoneSigned(task.id, {
           link: linkDraft.trim() || null,
         });
+        afterMutation();
       } catch (e) {
         setError(e instanceof Error ? e.message : "Could not sign off");
       }
@@ -204,6 +212,7 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
       setError(null);
       try {
         await submitTaskLink(task.id, linkDraft.trim() || null);
+        afterMutation();
       } catch (e) {
         setError(e instanceof Error ? e.message : "Could not save link");
       }
@@ -214,6 +223,7 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
       setError(null);
       try {
         await submitSentForSignature(task.id);
+        afterMutation();
       } catch (e) {
         setError(
           e instanceof Error ? e.message : "Could not mark sent for signature",
