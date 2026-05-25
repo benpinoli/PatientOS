@@ -50,7 +50,8 @@ export type DashboardPatientGroup = {
     Patient,
     "id" | "external_code" | "first_name" | "last_name" | "payer_id" | "created_at"
   > & { payer_name?: string };
-  openTasks: Task[];
+  /** All tasks for matrix view (includes approved). */
+  tasks: Task[];
 };
 
 export type DashboardBundle = {
@@ -80,7 +81,7 @@ type PatientQueueContext = {
   approvedRequiredCount: number;
 };
 
-export async function fetchDashboardTasks(supabase: SB): Promise<DashboardRow[]> {
+async function fetchAllDashboardTaskRows(supabase: SB): Promise<RawDashboardTask[]> {
   const { data: tasks, error } = await supabase.from("tasks").select(
     `
     *,
@@ -93,8 +94,11 @@ export async function fetchDashboardTasks(supabase: SB): Promise<DashboardRow[]>
   );
 
   if (error) throw error;
+  return (tasks ?? []) as unknown as RawDashboardTask[];
+}
 
-  const allTasks = (tasks ?? []) as unknown as RawDashboardTask[];
+export async function fetchDashboardTasks(supabase: SB): Promise<DashboardRow[]> {
+  const allTasks = await fetchAllDashboardTaskRows(supabase);
   const contextByPatient = buildPatientQueueContext(allTasks);
 
   const rows: DashboardRow[] = allTasks
@@ -187,14 +191,31 @@ export async function fetchDashboardBundle(
   supabase: SB,
   profile: AppUser,
 ): Promise<DashboardBundle> {
-  const rows = await fetchDashboardTasks(supabase);
-  const { topFive, pendingAtpReview } = partitionDashboardRows(rows, profile);
+  const allTaskRows = await fetchAllDashboardTaskRows(supabase);
+  const contextByPatient = buildPatientQueueContext(allTaskRows);
 
-  const sortedAll = sortIntelligentQueue(
-    rows,
-    buildPatientQueueContext(rows as unknown as RawDashboardTask[]),
-    profile,
-  );
+  const rows: DashboardRow[] = allTaskRows
+    .filter((t) => t.status !== "APPROVED")
+    .map((t) => {
+      const context = contextByPatient.get(t.patient.id);
+      return {
+        ...t,
+        patient: {
+          id: t.patient.id,
+          external_code: t.patient.external_code,
+          first_name: t.patient.first_name,
+          last_name: t.patient.last_name,
+          payer_id: t.patient.payer_id,
+          created_at: t.patient.created_at,
+          assigned_rep_id: t.patient.assigned_rep_id,
+          assigned_atp_id: t.patient.assigned_atp_id,
+          payer_name: t.patient.payer?.name,
+          next_step_label: context?.nextStepLabel ?? null,
+        },
+      };
+    });
+
+  const { topFive, pendingAtpReview } = partitionDashboardRows(rows, profile);
 
   const { data: patients, error } = await supabase
     .from("patients")
@@ -220,10 +241,13 @@ export async function fetchDashboardBundle(
   };
 
   const tasksByPatient = new Map<string, Task[]>();
-  for (const row of sortedAll) {
-    const list = tasksByPatient.get(row.patient_id) ?? [];
-    list.push(row);
-    tasksByPatient.set(row.patient_id, list);
+  for (const t of allTaskRows) {
+    const list = tasksByPatient.get(t.patient_id) ?? [];
+    list.push(t);
+    tasksByPatient.set(t.patient_id, list);
+  }
+  for (const list of tasksByPatient.values()) {
+    list.sort((a, b) => a.order_index - b.order_index);
   }
 
   const allPatients: DashboardPatientGroup[] = (patients ?? []).map((p) => {
@@ -238,7 +262,7 @@ export async function fetchDashboardBundle(
         created_at: row.created_at,
         payer_name: row.payer?.name,
       },
-      openTasks: tasksByPatient.get(row.id) ?? [],
+      tasks: tasksByPatient.get(row.id) ?? [],
     };
   });
 
