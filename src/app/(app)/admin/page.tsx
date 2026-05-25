@@ -1,7 +1,9 @@
 import { redirect } from "next/navigation";
 import { requireUser, isAdmin, hasRole } from "@/lib/server-helpers";
+import { fetchPayerTypes } from "@/lib/queries";
 import { AdminUserRow } from "./AdminUserRow";
 import { AdminTaskTemplates } from "./AdminTaskTemplates";
+import { AdminAddUserForm } from "./AdminAddUserForm";
 
 export const dynamic = "force-dynamic";
 
@@ -11,10 +13,12 @@ export default async function AdminPage() {
 
   const canEditTemplates =
     hasRole(profile, "BOSS") || hasRole(profile, "MANAGER");
+  const canManageUsers = canEditTemplates;
 
-  const [{ data: users }, { data: templates }] = await Promise.all([
+  const [{ data: users }, { data: templates }, payerTypes] = await Promise.all([
     supabase.from("app_users").select("*").order("full_name"),
     supabase.from("task_templates").select("*").order("payer_type").order("default_order"),
+    fetchPayerTypes(supabase).catch(() => []),
   ]);
 
   const allUsers = users ?? [];
@@ -29,13 +33,22 @@ export default async function AdminPage() {
       <section className="space-y-3">
         <h1 className="text-xl font-semibold text-zinc-900">Users</h1>
         <p className="text-sm text-zinc-500">
-          Activate accounts and assign roles + reporting structure. New
-          sign-ins land here as inactive REPs until you flip them on.
+          {canManageUsers
+            ? "Add accounts, activate users, assign roles, or remove users with no patient assignments."
+            : "Activate accounts and assign roles. Managers can add or remove users."}
         </p>
+
+        {canManageUsers && <AdminAddUserForm />}
 
         <ul className="space-y-3 lg:hidden">
           {allUsers.map((u) => (
-            <AdminUserRow key={u.id} user={u} allUsers={allUsers} variant="card" />
+            <AdminUserRow
+              key={u.id}
+              user={u}
+              allUsers={allUsers}
+              variant="card"
+              canManage={canManageUsers}
+            />
           ))}
         </ul>
 
@@ -50,12 +63,18 @@ export default async function AdminPage() {
                   <th className="px-4 py-2.5">Manager</th>
                   <th className="px-4 py-2.5">ATP supervisor</th>
                   <th className="px-4 py-2.5">Active</th>
-                  <th className="px-4 py-2.5 text-right">Save</th>
+                  <th className="px-4 py-2.5 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100">
                 {allUsers.map((u) => (
-                  <AdminUserRow key={u.id} user={u} allUsers={allUsers} variant="table" />
+                  <AdminUserRow
+                    key={u.id}
+                    user={u}
+                    allUsers={allUsers}
+                    variant="table"
+                    canManage={canManageUsers}
+                  />
                 ))}
               </tbody>
             </table>
@@ -67,10 +86,14 @@ export default async function AdminPage() {
         <h2 className="text-lg font-semibold text-zinc-900">Task templates</h2>
         <p className="text-sm text-zinc-500">
           {canEditTemplates
-            ? "Edit steps and drag to reorder (numbers update automatically). New patients only — existing cases keep snapshotted tasks."
+            ? "Add or remove patient types and checklist steps. Drag to reorder. New patients only — existing cases keep snapshotted tasks."
             : "View-only. Managers and bosses can edit templates."}
         </p>
-        <AdminTaskTemplates byType={byType} canEdit={canEditTemplates} />
+        <AdminTaskTemplates
+          payerTypes={payerTypes}
+          byType={byType}
+          canEdit={canEditTemplates}
+        />
       </section>
     </div>
   );

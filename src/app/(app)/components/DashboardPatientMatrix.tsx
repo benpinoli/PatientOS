@@ -1,6 +1,7 @@
 import Link from "next/link";
-import type { PayerType, Task } from "@/lib/db-types";
+import type { PayerTypeRecord, Task } from "@/lib/db-types";
 import type { DashboardPatientGroup } from "@/lib/queries";
+import { payerTypeMatrixDescription, payerTypeMatrixTitle } from "@/lib/payer-types";
 import { STATUS_CLASS, STATUS_LABEL, formatDate, isOverdue } from "@/lib/format";
 
 type MatrixColumn = {
@@ -9,26 +10,10 @@ type MatrixColumn = {
   label: string;
 };
 
-const PAYER_TABLES: {
-  type: PayerType;
-  title: string;
-  description: string;
-}[] = [
-  {
-    type: "COMMERCIAL",
-    title: "Insurance patients",
-    description: "Commercial / private insurance workflows.",
-  },
-  {
-    type: "MEDICAID",
-    title: "Medicaid patients",
-    description: "Nevada Medicaid Group 3 checklist.",
-  },
-  {
-    type: "MEDICARE",
-    title: "Medicare patients",
-    description: "Medicare workflow steps.",
-  },
+const FALLBACK_PAYER_TYPES: PayerTypeRecord[] = [
+  { code: "COMMERCIAL", display_name: "Insurance", sort_order: 1 },
+  { code: "MEDICAID", display_name: "Medicaid", sort_order: 2 },
+  { code: "MEDICARE", display_name: "Medicare", sort_order: 3 },
 ];
 
 function buildColumns(groups: DashboardPatientGroup[]): MatrixColumn[] {
@@ -167,9 +152,13 @@ function PatientMatrixTable({ groups }: { groups: DashboardPatientGroup[] }) {
 
 export function DashboardPatientMatrix({
   groups,
+  payerTypes = FALLBACK_PAYER_TYPES,
 }: {
   groups: DashboardPatientGroup[];
+  payerTypes?: PayerTypeRecord[];
 }) {
+  const tables =
+    payerTypes.length > 0 ? payerTypes : FALLBACK_PAYER_TYPES;
   if (groups.length === 0) {
     return (
       <div className="rounded-md border border-dashed border-zinc-300 bg-white p-6 text-center text-sm text-zinc-500">
@@ -180,10 +169,12 @@ export function DashboardPatientMatrix({
 
   return (
     <div className="space-y-8">
-      {PAYER_TABLES.map(({ type, title, description }) => {
-        const sectionGroups = groups.filter((g) => g.patient.payer_type === type);
+      {tables.map((pt) => {
+        const title = payerTypeMatrixTitle(pt);
+        const description = payerTypeMatrixDescription(pt.code, pt.display_name);
+        const sectionGroups = groups.filter((g) => g.patient.payer_type === pt.code);
         return (
-          <section key={type} className="space-y-2">
+          <section key={pt.code} className="space-y-2">
             <div>
               <h3 className="text-base font-semibold text-zinc-900">{title}</h3>
               <p className="text-sm text-zinc-500">{description}</p>

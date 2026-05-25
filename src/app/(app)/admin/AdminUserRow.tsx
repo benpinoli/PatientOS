@@ -2,7 +2,7 @@
 
 import { useState, useTransition, type ReactNode } from "react";
 import type { AppUser, Role } from "@/lib/db-types";
-import { updateUser } from "../actions";
+import { deleteUserAccount, updateUser } from "../actions";
 
 const ALL_ROLES: Role[] = ["BOSS", "MANAGER", "ATP", "REP"];
 
@@ -27,10 +27,12 @@ export function AdminUserRow({
   user,
   allUsers,
   variant = "table",
+  canManage = false,
 }: {
   user: AppUser;
   allUsers: AppUser[];
   variant?: "table" | "card";
+  canManage?: boolean;
 }) {
   const [pending, start] = useTransition();
   const [roles, setRoles] = useState<Role[]>((user.roles ?? []) as Role[]);
@@ -40,6 +42,7 @@ export function AdminUserRow({
   );
   const [active, setActive] = useState<boolean>(user.active);
   const [saved, setSaved] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const isAtp = roles.includes("ATP");
   const atpCandidates = allUsers.filter(
@@ -61,6 +64,24 @@ export function AdminUserRow({
       setSaved(true);
       setTimeout(() => setSaved(false), 1200);
     });
+
+  const remove = () => {
+    if (
+      !confirm(
+        `Permanently delete ${user.full_name ?? user.email}? This removes their sign-in.`,
+      )
+    ) {
+      return;
+    }
+    setDeleteError(null);
+    start(async () => {
+      try {
+        await deleteUserAccount(user.id);
+      } catch (e) {
+        setDeleteError(e instanceof Error ? e.message : "Could not delete user");
+      }
+    });
+  };
 
   const roleButtons = (
     <div className="flex flex-wrap gap-2">
@@ -156,7 +177,20 @@ export function AdminUserRow({
           <AdminField label="Manager">{managerSelect}</AdminField>
           <AdminField label="ATP supervisor">{atpSupervisorField}</AdminField>
           <AdminField label="Account">{activeToggle}</AdminField>
-          {saveButton}
+          {deleteError && <p className="text-sm text-red-700">{deleteError}</p>}
+          <div className="flex flex-col gap-2 sm:flex-row">
+            {saveButton}
+            {canManage && (
+              <button
+                type="button"
+                onClick={remove}
+                disabled={pending}
+                className="min-h-11 rounded-lg border border-red-200 px-4 py-2.5 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+              >
+                Delete user
+              </button>
+            )}
+          </div>
         </div>
       </li>
     );
@@ -211,7 +245,24 @@ export function AdminUserRow({
           {active ? "active" : "inactive"}
         </label>
       </td>
-      <td className="px-4 py-3 text-right">{saveButton}</td>
+      <td className="px-4 py-3 text-right">
+        {deleteError && (
+          <p className="mb-1 text-xs text-red-700">{deleteError}</p>
+        )}
+        <div className="flex flex-col items-end gap-1">
+          {saveButton}
+          {canManage && (
+            <button
+              type="button"
+              onClick={remove}
+              disabled={pending}
+              className="rounded-lg border border-red-200 px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+            >
+              Delete
+            </button>
+          )}
+        </div>
+      </td>
     </tr>
   );
 }

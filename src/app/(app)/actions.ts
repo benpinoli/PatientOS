@@ -4,7 +4,9 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { getSupabaseServer } from "@/lib/supabase/server";
-import type { PayerType, ResponsibleRole, TaskStatus, AppUser } from "@/lib/db-types";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { normalizePayerTypeCode } from "@/lib/payer-types";
+import type { AppUser, PayerType, ResponsibleRole, TaskStatus } from "@/lib/db-types";
 import { DEFAULT_DUE_DAYS } from "@/lib/constants";
 import { normalizeExternalUrl } from "@/lib/urls";
 import {
@@ -316,6 +318,94 @@ export async function updateUser(
 }
 
 // =====================================================================
+// Admin: create / delete users (BOSS / MANAGER + service role)
+// =====================================================================
+
+async function requireUserManager() {
+  const supabase = await getSupabaseServer();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("You must be signed in.");
+
+  const { data: profile, error } = await supabase
+    .from("app_users")
+    .select("roles")
+    .eq("id", user.id)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+
+  const roles = (profile?.roles ?? []) as string[];
+  if (!roles.includes("BOSS") && !roles.includes("MANAGER")) {
+    throw new Error("Only managers can add or remove users.");
+  }
+  return { supabase, actorId: user.id };
+}
+
+export async function createUserAccount(input: {
+  email: string;
+  password: string;
+  full_name?: string;
+}) {
+  await requireUserManager();
+
+  const email = input.email.trim().toLowerCase();
+  const password = input.password;
+  const fullName = input.full_name?.trim() || null;
+
+  if (!email) throw new Error("Email is required.");
+  if (password.length < 8) throw new Error("Password must be at least 8 characters.");
+
+  const admin = getSupabaseAdmin();
+  const { data, error } = await admin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+    user_metadata: fullName ? { full_name: fullName } : undefined,
+  });
+  if (error) throw new Error(error.message);
+
+  if (fullName && data.user) {
+    const supabase = await getSupabaseServer();
+    await supabase.rpc("update_app_user", {
+      p_user_id: data.user.id,
+      p_full_name: fullName,
+    });
+  }
+
+  revalidatePath("/admin");
+}
+
+export async function deleteUserAccount(userId: string) {
+  const { supabase, actorId } = await requireUserManager();
+  if (userId === actorId) throw new Error("You cannot delete your own account.");
+
+  const [{ count: repCount }, { count: atpCount }] = await Promise.all([
+    supabase
+      .from("patients")
+      .select("id", { count: "exact", head: true })
+      .eq("assigned_rep_id", userId),
+    supabase
+      .from("patients")
+      .select("id", { count: "exact", head: true })
+      .eq("assigned_atp_id", userId),
+  ]);
+
+  const assigned = (repCount ?? 0) + (atpCount ?? 0);
+  if (assigned > 0) {
+    throw new Error(
+      "This user is assigned to patients. Reassign those patients before deleting.",
+    );
+  }
+
+  const admin = getSupabaseAdmin();
+  const { error } = await admin.auth.admin.deleteUser(userId);
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/admin");
+}
+
+// =====================================================================
 // Admin: task template checklist (BOSS / MANAGER only)
 // =====================================================================
 
@@ -389,4 +479,129 @@ export async function reorderTaskTemplates(
   if (failed?.error) throw new Error(failed.error.message);
 
   revalidatePath("/admin");
+}
+
+export async function createTaskTemplate(payerType: PayerType) {
+  const supabase = await requireTemplateEditor();
+
+  const { data: last, error: lastErr } = await supabase
+    .from("task_templates")
+    .select("default_order")
+    .eq("payer_type", payerType)
+    .order("default_order", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (lastErr) throw new Error(lastErr.message);
+
+  const nextOrder = (last?.default_order ?? 0) + 1;
+  const { error } = await supabase.from("task_templates").insert({
+    payer_type: payerType,
+    label: "New step",
+    responsible_role: "REP",
+    requires_atp_review: true,
+    required: true,
+    default_order: nextOrder,
+  });
+  if (error) throw new Error(error.message);
+  revalidatePath("/admin");
+}
+
+export async function deleteTaskTemplate(templateId: string, payerType: PayerType) {
+  const supabase = await requireTemplateEditor();
+
+  const { error: delErr } = await supabase
+    .from("task_templates")
+    .delete()
+    .eq("id", templateId)
+    .eq("payer_type", payerType);
+  if (delErr) throw new Error(delErr.message);
+
+  const { data: remaining, error: listErr } = await supabase
+    .from("task_templates")
+    .select("id")
+    .eq("payer_type", payerType)
+    .order("default_order");
+  if (listErr) throw new Error(listErr.message);
+
+  if (remaining?.length) {
+    await reorderTaskTemplates(
+      payerType,
+      remaining.map((r) => r.id),
+    );
+  }
+
+  revalidatePath("/admin");
+}
+
+export async function createPayerType(displayName: string) {
+  const supabase = await requireTemplateEditor();
+  const name = displayName.trim();
+  if (!name) throw new Error("Name is required.");
+
+  const code = normalizePayerTypeCode(name);
+
+  const { data: existing } = await supabase
+    .from("payer_types")
+    .select("code")
+    .eq("code", code)
+    .maybeSingle();
+  if (existing) throw new Error(`Patient type "${code}" already exists.`);
+
+  const { data: maxRow } = await supabase
+    .from("payer_types")
+    .select("sort_order")
+    .order("sort_order", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const sortOrder = (maxRow?.sort_order ?? 0) + 1;
+
+  const { error: typeErr } = await supabase.from("payer_types").insert({
+    code,
+    display_name: name,
+    sort_order: sortOrder,
+  });
+  if (typeErr) throw new Error(typeErr.message);
+
+  const { error: payerErr } = await supabase.from("payers").insert({
+    name,
+    type: code,
+  });
+  if (payerErr) throw new Error(payerErr.message);
+
+  revalidatePath("/admin");
+  revalidatePath("/");
+}
+
+export async function deletePayerType(code: PayerType) {
+  const supabase = await requireTemplateEditor();
+
+  const { data: payers, error: payersErr } = await supabase
+    .from("payers")
+    .select("id")
+    .eq("type", code);
+  if (payersErr) throw new Error(payersErr.message);
+
+  const payerIds = (payers ?? []).map((p) => p.id);
+  if (payerIds.length > 0) {
+    const { count, error: patientErr } = await supabase
+      .from("patients")
+      .select("id", { count: "exact", head: true })
+      .in("payer_id", payerIds);
+    if (patientErr) throw new Error(patientErr.message);
+    if ((count ?? 0) > 0) {
+      throw new Error(
+        "Patients use this type. Move or close those cases before deleting the type.",
+      );
+    }
+
+    const { error: delPayersErr } = await supabase.from("payers").delete().eq("type", code);
+    if (delPayersErr) throw new Error(delPayersErr.message);
+  }
+
+  const { error: typeErr } = await supabase.from("payer_types").delete().eq("code", code);
+  if (typeErr) throw new Error(typeErr.message);
+
+  revalidatePath("/admin");
+  revalidatePath("/");
 }

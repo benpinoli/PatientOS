@@ -1,5 +1,5 @@
 import { requireUser } from "@/lib/server-helpers";
-import { fetchDashboardBundle } from "@/lib/queries";
+import { fetchDashboardBundle, fetchPayerTypes } from "@/lib/queries";
 import { DashboardPatientMatrix } from "./components/DashboardPatientMatrix";
 import { TaskQueueResponsive } from "./components/TaskQueueResponsive";
 
@@ -7,7 +7,10 @@ export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const { supabase, profile } = await requireUser();
-  const { topFive, allPatients } = await fetchDashboardBundle(supabase, profile);
+  const [{ topFive, allPatients }, payerTypes] = await Promise.all([
+    fetchDashboardBundle(supabase, profile),
+    fetchPayerTypes(supabase).catch(() => []),
+  ]);
 
   return (
     <div className="space-y-8">
@@ -38,7 +41,7 @@ export default async function DashboardPage() {
             activate it.
           </div>
         ) : (
-          <DashboardPatientMatrix groups={allPatients} />
+          <DashboardPatientMatrix groups={allPatients} payerTypes={payerTypes} />
         )}
       </section>
     </div>

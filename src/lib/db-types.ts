@@ -2,7 +2,14 @@
 // this file with `supabase gen types typescript --linked > src/lib/db-types.ts`.
 
 export type Role = "ATP" | "REP" | "MANAGER" | "BOSS";
-export type PayerType = "MEDICARE" | "MEDICAID" | "COMMERCIAL";
+/** Payer workflow code — see `payer_types` table (e.g. MEDICARE, MEDICAID, COMMERCIAL). */
+export type PayerType = string;
+export type PayerTypeRecord = {
+  code: string;
+  display_name: string;
+  sort_order: number;
+  created_at?: string;
+};
 export type PatientStatus =
   | "ACTIVE"
   | "SUBMITTED"
@@ -89,6 +96,7 @@ export type Database = {
       patients:  { Row: Patient; Insert: Partial<Patient>; Update: Partial<Patient> };
       task_templates: { Row: TaskTemplate; Insert: Partial<TaskTemplate>; Update: Partial<TaskTemplate> };
       tasks:     { Row: Task; Insert: Partial<Task>; Update: Partial<Task> };
+      payer_types: { Row: PayerTypeRecord; Insert: Partial<PayerTypeRecord> & { code: string }; Update: Partial<PayerTypeRecord> };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;

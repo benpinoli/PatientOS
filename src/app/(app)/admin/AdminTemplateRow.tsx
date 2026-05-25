@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useTransition, type DragEvent, type ReactNode } from "react";
-import type { ResponsibleRole, TaskTemplate } from "@/lib/db-types";
+import type { PayerType, ResponsibleRole, TaskTemplate } from "@/lib/db-types";
 import { ROLE_LABEL } from "@/lib/format";
-import { updateTaskTemplate } from "../actions";
+import { deleteTaskTemplate, updateTaskTemplate } from "../actions";
 
 const RESPONSIBLE_ROLES: ResponsibleRole[] = [
   "REP",
@@ -65,6 +65,7 @@ function DragHandle({ onDragStart }: { onDragStart: (e: DragEvent) => void }) {
 
 export function AdminTemplateRow({
   template,
+  payerType,
   orderNumber,
   canEdit,
   variant = "table",
@@ -75,6 +76,7 @@ export function AdminTemplateRow({
   onDrop,
 }: {
   template: TaskTemplate;
+  payerType: PayerType;
   orderNumber: number;
   canEdit: boolean;
   variant?: "table" | "card";
@@ -124,6 +126,18 @@ export function AdminTemplateRow({
         setError(e instanceof Error ? e.message : "Save failed");
       }
     });
+
+  const remove = () => {
+    if (!confirm(`Delete step "${template.label}"?`)) return;
+    start(async () => {
+      setError(null);
+      try {
+        await deleteTaskTemplate(template.id, payerType);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Delete failed");
+      }
+    });
+  };
 
   if (!canEdit) {
     if (variant === "card") {
@@ -228,11 +242,34 @@ export function AdminTemplateRow({
       disabled={pending}
       className={
         "rounded-lg bg-zinc-900 px-3 py-2 text-xs font-semibold text-white hover:bg-zinc-800 disabled:opacity-50 " +
-        (variant === "card" ? "min-h-11 w-full" : "")
+        (variant === "card" ? "min-h-11 flex-1" : "")
       }
     >
       {saved ? "Saved" : pending ? "Saving…" : "Save"}
     </button>
+  );
+
+  const deleteButton = (
+    <button
+      type="button"
+      onClick={remove}
+      disabled={pending}
+      className={
+        "rounded-lg border border-red-200 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50 " +
+        (variant === "card" ? "min-h-11" : "")
+      }
+    >
+      Delete
+    </button>
+  );
+
+  const actionButtons = (
+    <div className={variant === "card" ? "flex gap-2" : "flex flex-col items-end gap-1"}>
+      <div className={variant === "table" ? "flex gap-1" : "flex w-full gap-2"}>
+        {saveButton}
+        {deleteButton}
+      </div>
+    </div>
   );
 
   const rowClass =
@@ -257,7 +294,7 @@ export function AdminTemplateRow({
               {requiredCheck}
             </div>
             {error && <p className="text-sm text-red-700">{error}</p>}
-            {saveButton}
+            {actionButtons}
           </div>
         </div>
       </li>
@@ -280,7 +317,7 @@ export function AdminTemplateRow({
         {error && (
           <p className="mb-1 max-w-[8rem] text-right text-xs text-red-700">{error}</p>
         )}
-        {saveButton}
+        {actionButtons}
       </td>
     </tr>
   );
