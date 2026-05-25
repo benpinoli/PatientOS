@@ -292,14 +292,14 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
 
       {showApprove && (
         <DocumentLinkPanel
-          title="ATP approve"
-          description="Approve this step after the rep’s submission. Record the final document link or confirm it was sent another way."
+          title="ATP Approve (signed)"
+          description="Sign off on this step after the rep’s submission. Record the final document link or confirm it was sent another way."
           linkDraft={linkDraft}
           setLinkDraft={setLinkDraft}
           sentOtherMeans={sentOtherMeans}
           setSentOtherMeans={setSentOtherMeans}
           checkboxLabel="Sent via other means (no URL)"
-          submitLabel="Approve"
+          submitLabel="ATP Approve (signed)"
           submitTone="green"
           disabled={false}
           pending={pending}
