@@ -23,9 +23,10 @@ see [`CLAUDE.md`](./CLAUDE.md).
 - **Tailwind CSS 4**
 - Auth via Microsoft (Azure AD / Entra) OAuth by default; providers are
   config-driven (see `src/lib/auth-providers.ts`).
-- Intended deployment: **AWS Amplify** for the Next.js app, pointed at
-  **self-hosted Supabase on AWS EC2** for data + auth. The current hosted
-  Supabase project is a temporary synthetic-data backend only.
+- Intended deployment: **AWS Amplify** for the Next.js app and **self-hosted
+  Supabase** (Docker on EC2) for Postgres + auth. See
+  [`infra/aws/DEPLOYMENT.md`](infra/aws/DEPLOYMENT.md). Do **not** use
+  Supabase Cloud for production.
 
 ---
 

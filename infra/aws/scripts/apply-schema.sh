@@ -25,7 +25,7 @@ if ! command -v psql >/dev/null 2>&1; then
 fi
 
 echo "==> Migrations"
-for f in "$MIGRATIONS"/0001_init.sql "$MIGRATIONS"/0002_rls.sql "$MIGRATIONS"/0003_approve_gate.sql; do
+for f in "$MIGRATIONS"/*.sql; do
   echo "    $f"
   psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f"
 done

@@ -1,8 +1,11 @@
 # AWS Amplify Hosting — Next.js 16 (HANDOFF step 7)
 # Connect repo branch `main` in Amplify Console (us-west-2).
-# Set env vars in Console (do not commit secrets):
-#   NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY
-#   NEXT_PUBLIC_AUTH_AZURE_ENABLED, NEXT_PUBLIC_AUTH_GOOGLE_ENABLED, NEXT_PUBLIC_AUTH_EMAIL_ENABLED
+# Set env vars in Console (do not commit secrets). AWS self-hosted Supabase:
+#   SUPABASE_INTERNAL_URL=http://<EC2_IP>:8000
+#   NEXT_PUBLIC_SUPABASE_URL=https://<amplify-app>/supabase
+#   NEXT_PUBLIC_SUPABASE_ANON_KEY=<from EC2 /opt/choice-supabase/.env>
+#   NEXT_PUBLIC_AUTH_*_ENABLED
+# See infra/aws/DEPLOYMENT.md and scripts/update-amplify-env.ps1
 
 version: 1
 frontend:

@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useActionState, useMemo, useState } from "react";
 import type { AppUser, Payer } from "@/lib/db-types";
-import { createPatient } from "../../actions";
+import { createPatient, type CreatePatientState } from "../../actions";
 
 // Reactive form: when the rep selection changes, auto-default the ATP
 // dropdown to either (a) the rep themselves if they have the ATP role,
@@ -70,9 +70,21 @@ export function NewPatientForm({
   };
 
   const repHasNoAtp = repId !== "" && atpId === "";
+  const [state, formAction, pending] = useActionState<CreatePatientState, FormData>(
+    createPatient,
+    null,
+  );
 
   return (
-    <form action={createPatient} className="space-y-3 rounded-lg border border-zinc-200 bg-white p-5">
+    <form action={formAction} className="space-y-3 rounded-lg border border-zinc-200 bg-white p-5">
+      {state?.error && (
+        <div
+          role="alert"
+          className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+        >
+          {state.error}
+        </div>
+      )}
       <div className="grid grid-cols-2 gap-3">
         <Field label="First name" name="first_name" required />
         <Field label="Last name" name="last_name" required />
@@ -171,9 +183,10 @@ export function NewPatientForm({
       <div className="flex justify-end gap-2 pt-2">
         <button
           type="submit"
-          className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800"
+          disabled={pending || repHasNoAtp}
+          className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          Create patient + tasks
+          {pending ? "Creating…" : "Create patient + tasks"}
         </button>
       </div>
     </form>

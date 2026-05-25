@@ -46,9 +46,7 @@ done
 
 if [[ -d "$REPO_ROOT/supabase/migrations" ]]; then
   echo "==> Applying Choice Healthcare migrations + seed"
-  for f in "$REPO_ROOT/supabase/migrations"/0001_init.sql \
-           "$REPO_ROOT/supabase/migrations"/0002_rls.sql \
-           "$REPO_ROOT/supabase/migrations"/0003_approve_gate.sql; do
+  for f in "$REPO_ROOT/supabase/migrations"/*.sql; do
     echo "    $f"
     sudo docker compose exec -T db psql -U postgres -v ON_ERROR_STOP=1 < "$f"
   done

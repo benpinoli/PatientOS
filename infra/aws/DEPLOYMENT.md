@@ -1,57 +1,103 @@
-# AWS deployment — live stack
-
-**Last provisioned:** self-hosted Supabase on EC2 (us-west-2).
-
-| Resource | Value |
-|----------|--------|
-| Elastic IP | `44.253.198.43` |
-| Instance | `i-0c55b5678f0ec6cf7` (t4g.small) |
-| Security group | `sg-07721f9fedc45d2fa` |
-| SSH key | `%USERPROFILE%\.ssh\choice-tracker-key.pem` |
-| Supabase API (Kong) | `http://44.253.198.43:8000` |
-| Install path on server | `/opt/choice-supabase` |
-
-## Point the Next.js app here
-
-In `.env.local` (and Amplify env vars):
-
-```env
-NEXT_PUBLIC_SUPABASE_URL=http://44.253.198.43:8000
-NEXT_PUBLIC_SUPABASE_ANON_KEY=<from /opt/choice-supabase/.env ANON_KEY on server>
-NEXT_PUBLIC_AUTH_EMAIL_ENABLED=true
-```
-
-SSH to read keys:
-
-```bash
-ssh -i ~/.ssh/choice-tracker-key.pem ubuntu@44.253.198.43
-sudo grep -E '^ANON_KEY=|^SERVICE_ROLE_KEY=' /opt/choice-supabase/.env
-```
-
-Demo login (seed): `tara@choice.example` / `password123`
-
-## Amplify (step 7)
-
-1. [Amplify Console](https://us-west-2.console.aws.amazon.com/amplify/) → **Create new app** → GitHub → `benpinoli/Choice-Healthcare-Task-System` → branch `main` or `build/v1-tracker`.
-2. Build spec: root [`amplify.yml`](../../amplify.yml).
-3. Add the same env vars as above.
-4. After deploy, set GoTrue `SITE_URL` on EC2 to your Amplify URL and add it to redirect allow list in `/opt/choice-supabase/.env`, then `sudo docker compose ... up -d auth`.
-
-## Rotate JWT keys (before real PHI)
-
-On EC2:
-
-```bash
-cd /opt/choice-supabase
-sudo bash ./utils/generate-keys.sh   # if present in upstream docker
-sudo docker compose -f docker-compose.yml -f docker-compose.override.yml up -d --force-recreate auth rest kong
-```
-
-Update Amplify + `.env.local` with the new `ANON_KEY`.
-
-## Tear down (cost control)
-
-```powershell
-aws ec2 terminate-instances --region us-west-2 --instance-ids i-0c55b5678f0ec6cf7
-aws ec2 release-address --region us-west-2 --allocation-id <eip-allocation-id>
-```
+# AWS deployment — live stack
+
+**Database:** self-hosted **open-source Supabase** on EC2 (not Supabase Cloud).  
+**App:** Next.js on **AWS Amplify**, proxying API calls to EC2 over HTTPS.
+
+| Resource | Value |
+|----------|--------|
+| Elastic IP | `44.253.198.43` |
+| Instance | `i-0c55b5678f0ec6cf7` (t4g.small) |
+| Security group | `sg-07721f9fedc45d2fa` |
+| SSH key | `%USERPROFILE%\.ssh\choice-tracker-key.pem` |
+| Supabase API (Kong) | `http://44.253.198.43:8000` |
+| Install path on server | `/opt/choice-supabase` |
+| Amplify app | `d2na0dxbmaa2o4` → `https://main.d2na0dxbmaa2o4.amplifyapp.com` |
+
+## 1. Apply database migrations (required for new-patient form)
+
+If the stack was created before May 2026, apply pending migrations on EC2:
+
+```bash
+# Copy latest repo to EC2, then:
+export REPO_ROOT=/tmp/choice-repo
+bash /tmp/choice-infra/scripts/apply-pending-migrations.sh
+```
+
+This applies `0004_supervising_atp.sql` (ATP auto-assign) and `0005_patient_insert_policy.sql` (patient INSERT RLS).
+
+Fresh installs: `apply-schema.sh` or `remote-setup-all.sh` runs **all** `supabase/migrations/*.sql` in order.
+
+## 2. Local dev (`.env.local`)
+
+```env
+NEXT_PUBLIC_SUPABASE_URL=http://44.253.198.43:8000
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<from EC2 .env>
+NEXT_PUBLIC_AUTH_EMAIL_ENABLED=true
+NEXT_PUBLIC_AUTH_AZURE_ENABLED=false
+```
+
+Copy from [`.env.aws.local`](../../.env.aws.local).
+
+SSH to read keys:
+
+```bash
+ssh -i ~/.ssh/choice-tracker-key.pem ubuntu@44.253.198.43
+sudo grep -E '^ANON_KEY=|^SERVICE_ROLE_KEY=' /opt/choice-supabase/.env
+```
+
+Demo login (seed): `tara@choice.example` / `password123`
+
+## 3. Amplify → EC2 (HTTPS proxy, no Supabase Cloud)
+
+Browsers block HTTPS Amplify → HTTP EC2. The app proxies via Next.js:
+
+| Variable | Example |
+|----------|---------|
+| `SUPABASE_INTERNAL_URL` | `http://44.253.198.43:8000` |
+| `NEXT_PUBLIC_SUPABASE_URL` | `https://main.d2na0dxbmaa2o4.amplifyapp.com/supabase` |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | EC2 `ANON_KEY` |
+
+PowerShell helper (after setting `SUPABASE_ANON_KEY`):
+
+```powershell
+$env:AMPLIFY_APP_ID = "d2na0dxbmaa2o4"
+$env:AMPLIFY_BRANCH = "main"
+$env:EC2_SUPABASE_URL = "http://44.253.198.43:8000"
+$env:AMPLIFY_APP_URL = "https://main.d2na0dxbmaa2o4.amplifyapp.com"
+$env:SUPABASE_ANON_KEY = "<paste ANON_KEY>"
+.\infra\aws\scripts\update-amplify-env.ps1
+```
+
+Then redeploy Amplify (push to `main` or “Redeploy this version”).
+
+## 4. GoTrue redirect URLs on EC2
+
+Edit `/opt/choice-supabase/.env`:
+
+```env
+SITE_URL=https://main.d2na0dxbmaa2o4.amplifyapp.com
+API_EXTERNAL_URL=https://main.d2na0dxbmaa2o4.amplifyapp.com/supabase
+SUPABASE_PUBLIC_URL=https://main.d2na0dxbmaa2o4.amplifyapp.com/supabase
+```
+
+Add the Amplify URL to `ADDITIONAL_REDIRECT_URLS`, then:
+
+```bash
+cd /opt/choice-supabase
+sudo docker compose -f docker-compose.yml -f docker-compose.override.yml up -d auth kong
+```
+
+## 5. Retire Supabase Cloud
+
+After smoke-testing Amplify + EC2, pause the managed project `ftxxexwzrhyrqjguagbi` in the Supabase dashboard.
+
+## Optional: HTTPS on EC2 with a domain
+
+See [caddy/Caddyfile](./caddy/Caddyfile). Then set `NEXT_PUBLIC_SUPABASE_URL=https://api.yourdomain.com` and skip the `/supabase` proxy.
+
+## Tear down (cost control)
+
+```powershell
+aws ec2 terminate-instances --region us-west-2 --instance-ids i-0c55b5678f0ec6cf7
+aws ec2 release-address --region us-west-2 --allocation-id <eip-allocation-id>
+```

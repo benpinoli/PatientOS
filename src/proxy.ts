@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import { getSupabaseUrl } from "@/lib/supabase/config";
 
 // Refreshes the Supabase auth cookie on every request and gates protected
 // routes. Public routes: /login, /auth/*, /_next/*, /public/*.
@@ -7,7 +8,7 @@ export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    getSupabaseUrl(),
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
@@ -54,5 +55,7 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!api|_next/static|_next/image|.*\\.(?:svg|png|jpg|jpeg|webp|ico)).*)"],
+  matcher: [
+    "/((?!api|supabase|_next/static|_next/image|.*\\.(?:svg|png|jpg|jpeg|webp|ico)).*)",
+  ],
 };

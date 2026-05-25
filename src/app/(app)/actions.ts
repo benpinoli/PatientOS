@@ -2,9 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { getSupabaseServer } from "@/lib/supabase/server";
 import type { TaskStatus } from "@/lib/db-types";
 import { DEFAULT_DUE_DAYS } from "@/lib/constants";
+
+export type CreatePatientState = { error: string } | null;
 
 // =====================================================================
 // Task mutations
@@ -41,38 +44,60 @@ export async function setTaskPriority(taskId: string, priority: number | null) {
 }
 
 // =====================================================================
-// New patient — instantiates the task list from matching templates.
+// New patient — atomic via create_patient_with_tasks() RPC.
 // =====================================================================
 
-export async function createPatient(form: FormData) {
-  const supabase = await getSupabaseServer();
+export async function createPatient(
+  _prev: CreatePatientState,
+  form: FormData,
+): Promise<CreatePatientState> {
+  try {
+    const supabase = await getSupabaseServer();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return { error: "You must be signed in to create a patient." };
 
-  const first_name = (form.get("first_name") as string)?.trim();
-  const last_name = (form.get("last_name") as string)?.trim();
-  const external_code = (form.get("external_code") as string)?.trim() || null;
-  const referral_source = (form.get("referral_source") as string)?.trim() || null;
-  const payer_id = form.get("payer_id") as string;
-  const assigned_rep_id = (form.get("assigned_rep_id") as string) || null;
-  const assigned_atp_id = (form.get("assigned_atp_id") as string) || null;
+    const first_name = (form.get("first_name") as string)?.trim();
+    const last_name = (form.get("last_name") as string)?.trim();
+    const external_code = (form.get("external_code") as string)?.trim() || null;
+    const referral_source = (form.get("referral_source") as string)?.trim() || null;
+    const payer_id = form.get("payer_id") as string;
+    let assigned_rep_id = ((form.get("assigned_rep_id") as string) || "").trim() || null;
+    const assigned_atp_id = ((form.get("assigned_atp_id") as string) || "").trim() || null;
 
-  if (!first_name || !last_name || !payer_id) {
-    throw new Error("first_name, last_name, and payer_id are required");
+    if (!first_name || !last_name || !payer_id) {
+      return { error: "First name, last name, and payer are required." };
+    }
+
+    if (!assigned_rep_id) assigned_rep_id = user.id;
+
+    const { data: patientId, error } = await supabase.rpc("create_patient_with_tasks", {
+      p_first_name: first_name,
+      p_last_name: last_name,
+      p_external_code: external_code,
+      p_referral_source: referral_source,
+      p_payer_id: payer_id,
+      p_assigned_rep_id: assigned_rep_id,
+      p_assigned_atp_id: assigned_atp_id,
+      p_default_due_days: DEFAULT_DUE_DAYS,
+    });
+
+    if (error) {
+      const hint = error.message.includes("create_patient_with_tasks")
+        ? " Run migration 0005_harden_user_and_patient_workflows.sql on your database."
+        : "";
+      return { error: `${error.message}${hint}` };
+    }
+    if (!patientId) return { error: "Patient creation failed with no error detail." };
+
+    revalidatePath("/", "layout");
+    redirect(`/patients/${patientId}`);
+  } catch (e) {
+    if (isRedirectError(e)) throw e;
+    const message = e instanceof Error ? e.message : "Unknown error creating patient.";
+    return { error: message };
   }
-
-  const { data: patientId, error } = await supabase.rpc("create_patient_with_tasks", {
-    p_first_name: first_name,
-    p_last_name: last_name,
-    p_external_code: external_code,
-    p_referral_source: referral_source,
-    p_payer_id: payer_id,
-    p_assigned_rep_id: assigned_rep_id,
-    p_assigned_atp_id: assigned_atp_id,
-    p_default_due_days: DEFAULT_DUE_DAYS,
-  });
-  if (error || !patientId) throw new Error(error?.message ?? "patient creation failed");
-
-  revalidatePath("/", "layout");
-  redirect(`/patients/${patientId}`);
 }
 
 // =====================================================================
