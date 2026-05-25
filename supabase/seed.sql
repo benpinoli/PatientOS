@@ -174,36 +174,36 @@ on conflict (id) do nothing;
 insert into public.task_templates
   (payer_type, label, responsible_role, requires_atp_review, required, default_order)
 values
-  ('MEDICAID', 'Insurance eligibility / benefits verification',         'REP',    false, true, 1),
-  ('MEDICAID', 'Patient demographic / face sheet (dx codes)',           'REP',    false, true, 2),
-  ('MEDICAID', 'Medicaid mobility assessment / prior-auth form',        'REP',    false, true, 3),
+  ('MEDICAID', 'Insurance eligibility / benefits verification',         'REP',    true, true, 1),
+  ('MEDICAID', 'Patient demographic / face sheet (dx codes)',           'REP',    true, true, 2),
+  ('MEDICAID', 'Medicaid mobility assessment / prior-auth form',        'REP',    true, true, 3),
   ('MEDICAID', 'Physician face-to-face mobility exam note',             'DOCTOR', true,  true, 4),
   ('MEDICAID', 'Physician written order / prescription',                'DOCTOR', true,  true, 5),
   ('MEDICAID', 'PT mobility evaluation (signed)',                       'PT',     true,  true, 6),
-  ('MEDICAID', 'ATP specialty evaluation / assessment',                 'ATP',    false, true, 7),
-  ('MEDICAID', 'Home / accessibility assessment',                       'REP',    false, true, 8),
+  ('MEDICAID', 'ATP specialty evaluation / assessment',                 'ATP',    true, true, 7),
+  ('MEDICAID', 'Home / accessibility assessment',                       'REP',    true, true, 8),
   ('MEDICAID', 'Manufacturer quote w/ HCPCS codes',                     'ATP',    true,  true, 9),
   ('MEDICAID', 'Line-item justification (LIJ)',                         'ATP',    true,  true, 10),
   ('MEDICAID', 'Detailed product description (DPD)',                    'ATP',    true,  true, 11),
-  ('MEDICAID', 'Supporting chart notes / medical records',              'DOCTOR', false, true, 12),
+  ('MEDICAID', 'Supporting chart notes / medical records',              'DOCTOR', true, true, 12),
   ('MEDICAID', 'Final packet QA (dates align, all signatures present)', 'ATP',    true,  true, 13),
-  ('MEDICAID', 'Submission to payer',                                   'REP',    false, true, 14);
+  ('MEDICAID', 'Submission to payer',                                   'REP',    true, true, 14);
 
 -- Stub templates for Medicare + Commercial so new-patient flows don't break
 insert into public.task_templates
   (payer_type, label, responsible_role, requires_atp_review, required, default_order)
 values
-  ('MEDICARE',   'Insurance eligibility / benefits verification', 'REP',    false, true, 1),
+  ('MEDICARE',   'Insurance eligibility / benefits verification', 'REP',    true, true, 1),
   ('MEDICARE',   'Face-to-face evaluation note',                  'DOCTOR', true,  true, 2),
   ('MEDICARE',   'Written order prior to delivery (WOPD)',        'DOCTOR', true,  true, 3),
-  ('MEDICARE',   'ATP specialty evaluation',                      'ATP',    false, true, 4),
-  ('MEDICARE',   'Submission to payer',                           'REP',    false, true, 5),
+  ('MEDICARE',   'ATP specialty evaluation',                      'ATP',    true, true, 4),
+  ('MEDICARE',   'Submission to payer',                           'REP',    true, true, 5),
 
-  ('COMMERCIAL', 'Insurance eligibility / benefits verification', 'REP',    false, true, 1),
-  ('COMMERCIAL', 'Prior authorization form',                      'REP',    false, true, 2),
+  ('COMMERCIAL', 'Insurance eligibility / benefits verification', 'REP',    true, true, 1),
+  ('COMMERCIAL', 'Prior authorization form',                      'REP',    true, true, 2),
   ('COMMERCIAL', 'Physician documentation',                       'DOCTOR', true,  true, 3),
-  ('COMMERCIAL', 'ATP evaluation',                                'ATP',    false, true, 4),
-  ('COMMERCIAL', 'Submission to payer',                           'REP',    false, true, 5);
+  ('COMMERCIAL', 'ATP evaluation',                                'ATP',    true, true, 4),
+  ('COMMERCIAL', 'Submission to payer',                           'REP',    true, true, 5);
 
 -- ------------------------------------------------------------
 -- 5. Patients
