@@ -43,8 +43,8 @@ export default async function DashboardPage() {
         <div>
           <h2 className="text-lg font-semibold text-zinc-900">All patients</h2>
           <p className="text-sm text-zinc-500">
-            One row per patient; each column is a workflow step. Due is the next
-            open step. Scroll horizontally for full checklists.
+            Separate tables by payer type so columns stay compact. Due is the
+            next open step; soonest due first within each table.
           </p>
         </div>
 

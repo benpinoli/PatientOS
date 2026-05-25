@@ -1,5 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Task, Patient, AppUser } from "@/lib/db-types";
+import type { Task, Patient, AppUser, PayerType } from "@/lib/db-types";
 import {
   canApproveAtpReview,
   canShowApproveButton,
@@ -49,7 +49,7 @@ export type DashboardPatientGroup = {
   patient: Pick<
     Patient,
     "id" | "external_code" | "first_name" | "last_name" | "payer_id" | "created_at"
-  > & { payer_name?: string };
+  > & { payer_name?: string; payer_type?: PayerType };
   /** All tasks for matrix view (includes approved). */
   tasks: Task[];
 };
@@ -223,7 +223,7 @@ export async function fetchDashboardBundle(
       `
         id, external_code, first_name, last_name, payer_id, created_at,
         assigned_rep_id, assigned_atp_id,
-        payer:payers ( name )
+        payer:payers ( name, type )
       `,
     )
     .order("created_at", { ascending: true });
@@ -237,7 +237,7 @@ export async function fetchDashboardBundle(
     last_name: string;
     payer_id: string;
     created_at: string;
-    payer: { name: string } | null;
+    payer: { name: string; type: PayerType } | null;
   };
 
   const tasksByPatient = new Map<string, Task[]>();
@@ -261,6 +261,7 @@ export async function fetchDashboardBundle(
         payer_id: row.payer_id,
         created_at: row.created_at,
         payer_name: row.payer?.name,
+        payer_type: row.payer?.type,
       },
       tasks: tasksByPatient.get(row.id) ?? [],
     };
