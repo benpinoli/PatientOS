@@ -37,13 +37,18 @@ $envVars = @{
   NEXT_PUBLIC_AUTH_AZURE_ENABLED = "false"
   NEXT_PUBLIC_AUTH_GOOGLE_ENABLED = "false"
   NEXT_PUBLIC_AUTH_EMAIL_ENABLED = "true"
-} | ConvertTo-Json -Compress
+}
+$envJson = ConvertTo-Json -InputObject $envVars -Compress
+$envFile = Join-Path $env:TEMP "amplify-env-$AppId-$Branch.json"
+[System.IO.File]::WriteAllText($envFile, "{`"environmentVariables`": $envJson}")
 
 & $aws amplify update-branch `
   --app-id $AppId `
   --branch-name $Branch `
   --region us-west-2 `
-  --environment-variables $envVars
+  --cli-input-json "file://$($envFile -replace '\\','/')"
+
+Remove-Item -Force $envFile -ErrorAction SilentlyContinue
 
 Write-Host "Updated Amplify branch $Branch"
 Write-Host "  SUPABASE_INTERNAL_URL = $Ec2SupabaseUrl"
