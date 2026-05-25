@@ -11,6 +11,7 @@ import {
   canApproveAtpReview,
   canShowMarkDone,
   canShowMarkDoneSigned,
+  markDoneNextStatus,
   type PatientAssignment,
 } from "@/lib/task-permissions";
 
@@ -132,7 +133,6 @@ export async function submitMarkDone(
   opts: {
     link: string | null;
     sentOtherMeans: boolean;
-    requiresAtpReview: boolean;
   },
 ) {
   const supabase = await getSupabaseServer();
@@ -144,9 +144,7 @@ export async function submitMarkDone(
 
   const trimmed = requireLinkOrOtherMeans(opts.link, opts.sentOtherMeans);
   const normalized = normalizeExternalUrl(trimmed);
-  const nextStatus: TaskStatus = opts.requiresAtpReview
-    ? "DONE_PENDING_REVIEW"
-    : "APPROVED";
+  const nextStatus: TaskStatus = markDoneNextStatus(task, patient);
 
   const patch: { status: TaskStatus; link?: string | null } = { status: nextStatus };
   if (normalized) patch.link = normalized;

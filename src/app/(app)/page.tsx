@@ -8,7 +8,8 @@ export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const { supabase, profile } = await requireUser();
-  const { topFive, allPatients } = await fetchDashboardBundle(supabase);
+  const { topFive, pendingAtpReview, allPatients } =
+    await fetchDashboardBundle(supabase, profile);
 
   return (
     <div className="space-y-8">
@@ -16,12 +17,28 @@ export default async function DashboardPage() {
         <div>
           <h1 className="text-xl font-semibold text-zinc-900">Top 5 tasks</h1>
           <p className="text-sm text-zinc-500">
-            Sorted by urgency, blockers, due dates, and case progress. Same tasks
-            may appear again under each patient below.
+            Work you can act on now — overdue items, your caseload, and ATP
+            sign-offs. Tasks waiting on ATP after you submitted them are listed
+            separately below.
           </p>
         </div>
         <TaskQueueResponsive rows={topFive} profile={profile} />
       </section>
+
+      {pendingAtpReview.length > 0 && (
+        <section className="space-y-3">
+          <div>
+            <h2 className="text-lg font-semibold text-zinc-900">
+              Pending ATP review
+            </h2>
+            <p className="text-sm text-zinc-500">
+              You marked these done; the assigned ATP must approve before they
+              show as approved.
+            </p>
+          </div>
+          <TaskQueueResponsive rows={pendingAtpReview} profile={profile} />
+        </section>
+      )}
 
       <section className="space-y-3">
         <div>

@@ -105,3 +105,39 @@ export function canShowStartTask(
   if (task.status !== "NOT_STARTED") return false;
   return canDoRepWorkflow(profile, patient);
 }
+
+/** Rep submitted work; waiting on assigned ATP (not actionable for rep). */
+export function isRepAwaitingAtpReview(
+  profile: AppUser,
+  patient: PatientAssignment,
+  task: Pick<Task, "status">,
+) {
+  return (
+    task.status === "DONE_PENDING_REVIEW" &&
+    patient.assigned_rep_id === profile.id &&
+    !isSoloAtpRep(patient)
+  );
+}
+
+/** ATP queue: rep has not started — ATP cannot act yet. */
+export function isAtpBlockedUntilRepStarts(
+  profile: AppUser,
+  patient: PatientAssignment,
+  task: Pick<Task, "status">,
+) {
+  return isAtpOnlyReviewer(profile, patient) && task.status === "NOT_STARTED";
+}
+
+/** Status after rep "mark done" on a shared rep+ATP case (always pending review). */
+export function markDoneNextStatus(
+  task: Pick<Task, "requires_atp_review">,
+  patient: PatientAssignment,
+): Task["status"] {
+  if (isSoloAtpRep(patient)) {
+    return "APPROVED";
+  }
+  if (patient.assigned_atp_id != null) {
+    return "DONE_PENDING_REVIEW";
+  }
+  return task.requires_atp_review ? "DONE_PENDING_REVIEW" : "APPROVED";
+}

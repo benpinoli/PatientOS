@@ -162,7 +162,6 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
         await submitMarkDone(task.id, {
           link: linkDraft.trim() || null,
           sentOtherMeans,
-          requiresAtpReview: task.requires_atp_review,
         });
         setSentOtherMeans(false);
       } catch (e) {
@@ -277,11 +276,7 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
       {showMarkDone && (
         <DocumentLinkPanel
           title="Mark done"
-          description={
-            task.requires_atp_review
-              ? "Submit the document for ATP review. The assigned ATP will approve when ready."
-              : "Complete this step and record where the document lives."
-          }
+          description="Submit this step for ATP review. It stays pending until the assigned ATP approves — it will not show as approved until then."
           linkDraft={linkDraft}
           setLinkDraft={setLinkDraft}
           sentOtherMeans={sentOtherMeans}

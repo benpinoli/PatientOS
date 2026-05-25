@@ -1,5 +1,13 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Task, Patient, AppUser } from "@/lib/db-types";
+import {
+  canApproveAtpReview,
+  canShowApproveButton,
+  isAtpBlockedUntilRepStarts,
+  isRepAwaitingAtpReview,
+  isSoloAtpRep,
+  type PatientAssignment,
+} from "@/lib/task-permissions";
 
 type SB = SupabaseClient;
 
@@ -9,6 +17,7 @@ const QUEUE_WEIGHTS = {
   overduePerDay: 100,
   blocked: 80,
   externalPartyWaiting: 50,
+  pendingAtpReviewForApprover: 200,
   pendingAtpReview: 45,
   nearSubmission: 35,
   patientNextStep: 30,
@@ -46,6 +55,7 @@ export type DashboardPatientGroup = {
 
 export type DashboardBundle = {
   topFive: DashboardRow[];
+  pendingAtpReview: DashboardRow[];
   allPatients: DashboardPatientGroup[];
 };
 
@@ -108,18 +118,19 @@ export async function fetchDashboardTasks(supabase: SB): Promise<DashboardRow[]>
       };
     });
 
-  return sortIntelligentQueue(rows, contextByPatient);
+  return rows;
 }
 
 function sortIntelligentQueue<T extends Task>(
   rows: T[],
   contextByPatient: Map<string, PatientQueueContext>,
+  profile?: AppUser,
 ): T[] {
   return [...rows].sort((a, b) => {
     const contextA = contextByPatient.get(a.patient_id);
     const contextB = contextByPatient.get(b.patient_id);
-    const scoreA = scoreDashboardTask(a, contextA);
-    const scoreB = scoreDashboardTask(b, contextB);
+    const scoreA = scoreDashboardTask(a, contextA, profile);
+    const scoreB = scoreDashboardTask(b, contextB, profile);
     if (scoreA !== scoreB) return scoreB - scoreA;
 
     const da = a.due_date ? new Date(a.due_date).getTime() : Number.POSITIVE_INFINITY;
@@ -130,9 +141,60 @@ function sortIntelligentQueue<T extends Task>(
   });
 }
 
-export async function fetchDashboardBundle(supabase: SB): Promise<DashboardBundle> {
+function patientAssignment(row: DashboardRow): PatientAssignment {
+  return {
+    assigned_rep_id: row.patient.assigned_rep_id,
+    assigned_atp_id: row.patient.assigned_atp_id,
+  };
+}
+
+/** Top 5 = work the user can do now; pending review is a separate bucket for reps. */
+function isActionableInTopFive(row: DashboardRow, profile: AppUser) {
+  const patient = patientAssignment(row);
+
+  if (isRepAwaitingAtpReview(profile, patient, row)) {
+    return false;
+  }
+
+  if (isAtpBlockedUntilRepStarts(profile, patient, row)) {
+    return false;
+  }
+
+  return true;
+}
+
+function partitionDashboardRows(rows: DashboardRow[], profile: AppUser) {
+  const contextByPatient = buildPatientQueueContext(
+    rows as unknown as RawDashboardTask[],
+  );
+
+  const pendingAtpReview = sortIntelligentQueue(
+    rows.filter((r) => isRepAwaitingAtpReview(profile, patientAssignment(r), r)),
+    contextByPatient,
+    profile,
+  );
+
+  const actionable = rows.filter((r) => isActionableInTopFive(r, profile));
+  const topFive = sortIntelligentQueue(actionable, contextByPatient, profile).slice(
+    0,
+    5,
+  );
+
+  return { topFive, pendingAtpReview };
+}
+
+export async function fetchDashboardBundle(
+  supabase: SB,
+  profile: AppUser,
+): Promise<DashboardBundle> {
   const rows = await fetchDashboardTasks(supabase);
-  const topFive = rows.slice(0, 5);
+  const { topFive, pendingAtpReview } = partitionDashboardRows(rows, profile);
+
+  const sortedAll = sortIntelligentQueue(
+    rows,
+    buildPatientQueueContext(rows as unknown as RawDashboardTask[]),
+    profile,
+  );
 
   const { data: patients, error } = await supabase
     .from("patients")
@@ -158,7 +220,7 @@ export async function fetchDashboardBundle(supabase: SB): Promise<DashboardBundl
   };
 
   const tasksByPatient = new Map<string, Task[]>();
-  for (const row of rows) {
+  for (const row of sortedAll) {
     const list = tasksByPatient.get(row.patient_id) ?? [];
     list.push(row);
     tasksByPatient.set(row.patient_id, list);
@@ -180,7 +242,7 @@ export async function fetchDashboardBundle(supabase: SB): Promise<DashboardBundl
     };
   });
 
-  return { topFive, allPatients };
+  return { topFive, pendingAtpReview, allPatients };
 }
 
 export function isPatientAssignedToUser(
@@ -215,8 +277,18 @@ function buildPatientQueueContext(tasks: RawDashboardTask[]) {
   return contextByPatient;
 }
 
-function scoreDashboardTask(task: Task, context?: PatientQueueContext) {
+function scoreDashboardTask(
+  task: Task,
+  context?: PatientQueueContext,
+  profile?: AppUser,
+) {
   let score = 0;
+  const patientCtx = profile
+    ? ({
+        assigned_rep_id: (task as DashboardRow).patient?.assigned_rep_id ?? null,
+        assigned_atp_id: (task as DashboardRow).patient?.assigned_atp_id ?? null,
+      } as PatientAssignment)
+    : null;
 
   const overdueDays = daysOverdue(task.due_date);
   if (overdueDays > 0) {
@@ -232,7 +304,15 @@ function scoreDashboardTask(task: Task, context?: PatientQueueContext) {
   }
 
   if (task.status === "DONE_PENDING_REVIEW" && task.requires_atp_review) {
-    score += QUEUE_WEIGHTS.pendingAtpReview;
+    if (
+      profile &&
+      patientCtx &&
+      canShowApproveButton(profile, patientCtx, task)
+    ) {
+      score += QUEUE_WEIGHTS.pendingAtpReviewForApprover;
+    } else {
+      score += QUEUE_WEIGHTS.pendingAtpReview;
+    }
   }
 
   if (context && context.requiredCount > 0) {
@@ -242,6 +322,24 @@ function scoreDashboardTask(task: Task, context?: PatientQueueContext) {
     }
     if (context.nextStepId === task.id) {
       score += QUEUE_WEIGHTS.patientNextStep;
+    }
+  }
+
+  if (profile && patientCtx) {
+    if (
+      task.status === "IN_PROGRESS" &&
+      (patientCtx.assigned_rep_id === profile.id ||
+        (isSoloAtpRep(patientCtx) && patientCtx.assigned_rep_id === profile.id))
+    ) {
+      score += QUEUE_WEIGHTS.patientNextStep;
+    }
+    if (
+      canApproveAtpReview(profile, patientCtx) &&
+      patientCtx.assigned_atp_id === profile.id &&
+      !isSoloAtpRep(patientCtx) &&
+      task.status === "DONE_PENDING_REVIEW"
+    ) {
+      score += QUEUE_WEIGHTS.pendingAtpReviewForApprover;
     }
   }
 
