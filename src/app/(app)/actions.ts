@@ -4,8 +4,13 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { getSupabaseServer } from "@/lib/supabase/server";
-import type { TaskStatus } from "@/lib/db-types";
+import type { TaskStatus, AppUser } from "@/lib/db-types";
 import { DEFAULT_DUE_DAYS } from "@/lib/constants";
+import {
+  canApproveAtpReview,
+  canShowMarkDone,
+  type PatientAssignment,
+} from "@/lib/task-permissions";
 
 export type CreatePatientState = { error: string } | null;
 
@@ -58,8 +63,69 @@ export async function fetchTaskLinkHistory(taskId: string): Promise<TaskLinkEven
   return (data ?? []) as TaskLinkEvent[];
 }
 
-/** Approve with link (or other-means). Records history; due dates are not editable. */
-export async function completeTaskApproval(
+async function loadTaskContext(supabase: Awaited<ReturnType<typeof getSupabaseServer>>, taskId: string) {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("You must be signed in.");
+
+  const { data: profile } = await supabase
+    .from("app_users")
+    .select("*")
+    .eq("id", user.id)
+    .maybeSingle();
+  if (!profile) throw new Error("User profile not found.");
+
+  const { data: task, error: taskErr } = await supabase
+    .from("tasks")
+    .select("id, patient_id, status, requires_atp_review")
+    .eq("id", taskId)
+    .maybeSingle();
+  if (taskErr || !task) throw new Error("Task not found.");
+
+  const { data: patient, error: pErr } = await supabase
+    .from("patients")
+    .select("assigned_rep_id, assigned_atp_id")
+    .eq("id", task.patient_id)
+    .maybeSingle();
+  if (pErr || !patient) throw new Error("Patient not found.");
+
+  return {
+    userId: user.id,
+    profile: profile as AppUser,
+    task,
+    patient: patient as PatientAssignment,
+  };
+}
+
+function requireLinkOrOtherMeans(link: string | null, sentOtherMeans: boolean) {
+  const trimmed = link?.trim() ?? "";
+  if (!sentOtherMeans && !trimmed) {
+    throw new Error(
+      "Paste a document link or check that the document was already sent.",
+    );
+  }
+  return trimmed;
+}
+
+async function recordLinkEvent(
+  supabase: Awaited<ReturnType<typeof getSupabaseServer>>,
+  taskId: string,
+  userId: string,
+  link: string,
+  viaOtherMeans: boolean,
+) {
+  const { error: histErr } = await supabase.from("task_link_events").insert({
+    task_id: taskId,
+    link: link || null,
+    via_other_means: viaOtherMeans,
+    posted_by: userId,
+  });
+  if (histErr) throw new Error(histErr.message);
+}
+
+/** Rep/ATP mark work done — always requires link or “already sent”. */
+export async function submitMarkDone(
   taskId: string,
   opts: {
     link: string | null;
@@ -68,15 +134,46 @@ export async function completeTaskApproval(
   },
 ) {
   const supabase = await getSupabaseServer();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error("You must be signed in.");
+  const { userId, profile, task, patient } = await loadTaskContext(supabase, taskId);
 
-  const trimmed = opts.link?.trim() ?? "";
-  if (!opts.sentOtherMeans && !trimmed) {
-    throw new Error("Paste a document link or check “Sent link through other means”.");
+  if (!canShowMarkDone(profile, patient, task)) {
+    throw new Error("You cannot mark this task done.");
   }
+
+  const trimmed = requireLinkOrOtherMeans(opts.link, opts.sentOtherMeans);
+  const nextStatus: TaskStatus = opts.requiresAtpReview
+    ? "DONE_PENDING_REVIEW"
+    : "APPROVED";
+
+  const patch: { status: TaskStatus; link?: string | null } = { status: nextStatus };
+  if (trimmed) patch.link = trimmed;
+
+  const { error } = await supabase.from("tasks").update(patch).eq("id", taskId);
+  if (error) throw new Error(error.message);
+
+  await recordLinkEvent(supabase, taskId, userId, trimmed, opts.sentOtherMeans);
+  revalidatePath("/", "layout");
+}
+
+/** ATP (or BOSS) approve pending review — requires link or other-means. */
+export async function completeTaskApproval(
+  taskId: string,
+  opts: {
+    link: string | null;
+    sentOtherMeans: boolean;
+  },
+) {
+  const supabase = await getSupabaseServer();
+  const { userId, profile, task, patient } = await loadTaskContext(supabase, taskId);
+
+  if (task.status !== "DONE_PENDING_REVIEW" || !task.requires_atp_review) {
+    throw new Error("This task is not awaiting ATP approval.");
+  }
+  if (!canApproveAtpReview(profile, patient)) {
+    throw new Error("Only the assigned ATP may approve this task.");
+  }
+
+  const trimmed = requireLinkOrOtherMeans(opts.link, opts.sentOtherMeans);
 
   const patch: { status: TaskStatus; link?: string | null } = { status: "APPROVED" };
   if (trimmed) patch.link = trimmed;
@@ -84,14 +181,7 @@ export async function completeTaskApproval(
   const { error } = await supabase.from("tasks").update(patch).eq("id", taskId);
   if (error) throw new Error(error.message);
 
-  const { error: histErr } = await supabase.from("task_link_events").insert({
-    task_id: taskId,
-    link: trimmed || null,
-    via_other_means: opts.sentOtherMeans,
-    posted_by: user.id,
-  });
-  if (histErr) throw new Error(histErr.message);
-
+  await recordLinkEvent(supabase, taskId, userId, trimmed, opts.sentOtherMeans);
   revalidatePath("/", "layout");
 }
 

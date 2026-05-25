@@ -8,6 +8,7 @@ import {
   updateTaskStatus,
   setTaskPriority,
   completeTaskApproval,
+  submitMarkDone,
   fetchTaskLinkHistory,
   type TaskLinkEvent,
 } from "./actions";
@@ -16,9 +17,89 @@ type TaskActionsProps = {
   task: Task;
   profile: AppUser;
   patient: PatientAssignment;
-  /** card = full-width mobile stack; table = compact desktop cell */
   layout?: "card" | "table";
 };
+
+function DocumentLinkPanel({
+  title,
+  description,
+  linkDraft,
+  setLinkDraft,
+  sentOtherMeans,
+  setSentOtherMeans,
+  checkboxLabel,
+  submitLabel,
+  submitTone,
+  disabled,
+  pending,
+  onSubmit,
+}: {
+  title: string;
+  description: string;
+  linkDraft: string;
+  setLinkDraft: (v: string) => void;
+  sentOtherMeans: boolean;
+  setSentOtherMeans: (v: boolean) => void;
+  checkboxLabel: string;
+  submitLabel: string;
+  submitTone: "amber" | "green";
+  disabled: boolean;
+  pending: boolean;
+  onSubmit: () => void;
+}) {
+  const ready = sentOtherMeans || linkDraft.trim().length > 0;
+  const border =
+    submitTone === "green"
+      ? "border-emerald-200 bg-emerald-50/50"
+      : "border-amber-200 bg-amber-50/50";
+  const titleColor = submitTone === "green" ? "text-emerald-900" : "text-amber-900";
+
+  return (
+    <div className={"w-full space-y-3 rounded-lg border p-3 " + border}>
+      <p className={"text-xs font-semibold uppercase tracking-wide " + titleColor}>
+        {title}
+      </p>
+      <p className="text-sm text-zinc-600">{description}</p>
+      <label className="block text-sm font-medium text-zinc-700">
+        Document link
+        <input
+          type="url"
+          inputMode="url"
+          autoComplete="url"
+          value={linkDraft}
+          onChange={(e) => {
+            setLinkDraft(e.target.value);
+            if (e.target.value.trim()) setSentOtherMeans(false);
+          }}
+          placeholder="https://"
+          className="mt-1.5 w-full rounded-lg border border-zinc-300 bg-white px-3 py-3 text-base shadow-sm"
+        />
+      </label>
+      <label className="flex min-h-11 items-center gap-3 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700">
+        <input
+          type="checkbox"
+          className="size-4 shrink-0"
+          checked={sentOtherMeans}
+          onChange={(e) => {
+            setSentOtherMeans(e.target.checked);
+            if (e.target.checked) setLinkDraft("");
+          }}
+        />
+        {checkboxLabel}
+      </label>
+      <ActionButton
+        disabled={pending || !ready || disabled}
+        label={submitLabel}
+        tone={submitTone === "green" ? "primary-green" : "primary-amber"}
+        fullWidth
+        onClick={onSubmit}
+      />
+      {!ready && (
+        <p className="text-xs text-zinc-500">Add a link or check the box above to continue.</p>
+      )}
+    </div>
+  );
+}
 
 export function TaskActions({ task, profile, patient, layout = "table" }: TaskActionsProps) {
   const [pending, start] = useTransition();
@@ -31,7 +112,6 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
   const isCard = layout === "card";
   const showApprove = canShowApproveButton(profile, patient, task);
   const showMarkDone = canShowMarkDone(profile, patient, task);
-  const needsLinkGate = showApprove && task.status === "DONE_PENDING_REVIEW";
 
   useEffect(() => {
     if (!showHistory) return;
@@ -60,6 +140,21 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
       }
     });
 
+  const onMarkDone = () =>
+    start(async () => {
+      setError(null);
+      try {
+        await submitMarkDone(task.id, {
+          link: linkDraft.trim() || null,
+          sentOtherMeans,
+          requiresAtpReview: task.requires_atp_review,
+        });
+        setSentOtherMeans(false);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Could not mark done");
+      }
+    });
+
   const onApprove = () =>
     start(async () => {
       setError(null);
@@ -67,15 +162,12 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
         await completeTaskApproval(task.id, {
           link: linkDraft.trim() || null,
           sentOtherMeans,
-          requiresAtpReview: task.requires_atp_review,
         });
         setSentOtherMeans(false);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Approval failed");
       }
     });
-
-  const approveReady = sentOtherMeans || linkDraft.trim().length > 0;
 
   return (
     <div
@@ -105,25 +197,7 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
             onClick={() => flip("IN_PROGRESS")}
           />
         )}
-        {showMarkDone && (
-          <ActionButton
-            disabled={pending}
-            label="Mark done"
-            tone="primary-amber"
-            fullWidth={isCard}
-            onClick={() => flip("DONE_PENDING_REVIEW")}
-          />
-        )}
-        {showApprove && !needsLinkGate && (
-          <ActionButton
-            disabled={pending}
-            label="Approve"
-            tone="primary-green"
-            fullWidth={isCard}
-            onClick={() => flip("APPROVED")}
-          />
-        )}
-        {task.status !== "BLOCKED" && task.status !== "APPROVED" && (
+        {task.status !== "BLOCKED" && task.status !== "APPROVED" && !showMarkDone && !showApprove && (
           <ActionButton
             disabled={pending}
             label="Block"
@@ -150,43 +224,42 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
         />
       </div>
 
-      {showApprove && needsLinkGate && (
-        <div className="w-full space-y-3 rounded-lg border border-emerald-200 bg-emerald-50/50 p-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-emerald-900">
-            Approve with documentation
-          </p>
-          <label className="block text-sm font-medium text-zinc-700">
-            Paste updated document link
-            <input
-              type="url"
-              inputMode="url"
-              autoComplete="url"
-              value={linkDraft}
-              onChange={(e) => {
-                setLinkDraft(e.target.value);
-                setSentOtherMeans(false);
-              }}
-              placeholder="https://"
-              className="mt-1.5 w-full rounded-lg border border-zinc-300 bg-white px-3 py-3 text-base shadow-sm"
-            />
-          </label>
-          <label className="flex min-h-11 items-center gap-3 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-700">
-            <input
-              type="checkbox"
-              className="size-4 shrink-0"
-              checked={sentOtherMeans}
-              onChange={(e) => setSentOtherMeans(e.target.checked)}
-            />
-            Sent through other means (no URL)
-          </label>
-          <ActionButton
-            disabled={pending || !approveReady}
-            label="Approve"
-            tone="primary-green"
-            fullWidth
-            onClick={onApprove}
-          />
-        </div>
+      {showMarkDone && (
+        <DocumentLinkPanel
+          title="Mark done"
+          description={
+            task.requires_atp_review
+              ? "Submit the document for ATP review. The assigned ATP will approve when ready."
+              : "Complete this step and record where the document lives."
+          }
+          linkDraft={linkDraft}
+          setLinkDraft={setLinkDraft}
+          sentOtherMeans={sentOtherMeans}
+          setSentOtherMeans={setSentOtherMeans}
+          checkboxLabel="Document already sent (no link to paste)"
+          submitLabel="Mark done"
+          submitTone="amber"
+          disabled={false}
+          pending={pending}
+          onSubmit={onMarkDone}
+        />
+      )}
+
+      {showApprove && (
+        <DocumentLinkPanel
+          title="ATP approve"
+          description="Approve this step after the rep’s submission. Record the final document link or confirm it was sent another way."
+          linkDraft={linkDraft}
+          setLinkDraft={setLinkDraft}
+          sentOtherMeans={sentOtherMeans}
+          setSentOtherMeans={setSentOtherMeans}
+          checkboxLabel="Sent via other means (no URL)"
+          submitLabel="Approve"
+          submitTone="green"
+          disabled={false}
+          pending={pending}
+          onSubmit={onApprove}
+        />
       )}
 
       {showHistory && (
@@ -320,7 +393,7 @@ function LinkHistoryMenu({
           {history.map((e) => (
             <li key={e.id} className="rounded-md border border-zinc-100 bg-zinc-50 p-3 text-sm">
               {e.via_other_means ? (
-                <span className="text-zinc-700">Sent via other means</span>
+                <span className="text-zinc-700">Document already sent / other means</span>
               ) : (
                 <a
                   href={e.link!}

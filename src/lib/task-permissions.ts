@@ -9,7 +9,16 @@ function hasRole(profile: AppUser, role: AppUser["roles"][number]) {
   return profile.roles?.includes(role) ?? false;
 }
 
-/** Can set APPROVED on a task pending ATP review (matches DB trigger). */
+export function canWorkOnPatient(profile: AppUser, patient: PatientAssignment) {
+  return (
+    hasRole(profile, "BOSS") ||
+    hasRole(profile, "MANAGER") ||
+    patient.assigned_rep_id === profile.id ||
+    patient.assigned_atp_id === profile.id
+  );
+}
+
+/** ATP sign-off on pending-review tasks (matches DB trigger). */
 export function canApproveAtpReview(
   profile: AppUser,
   patient: PatientAssignment,
@@ -27,40 +36,28 @@ export function canApproveAtpReview(
   return false;
 }
 
-/** Show the Approve control for this task in the current state. */
+/**
+ * Approve is ONLY for ATP review sign-off (never for plain reps).
+ * Reps use "Mark done" with a required link instead.
+ */
 export function canShowApproveButton(
   profile: AppUser,
   patient: PatientAssignment,
   task: Pick<Task, "status" | "requires_atp_review">,
 ): boolean {
-  if (task.status === "DONE_PENDING_REVIEW" && task.requires_atp_review) {
-    return canApproveAtpReview(profile, patient);
-  }
-  if (
-    (task.status === "IN_PROGRESS" || task.status === "NOT_STARTED") &&
-    !task.requires_atp_review
-  ) {
-    return (
-      hasRole(profile, "BOSS") ||
-      hasRole(profile, "MANAGER") ||
-      patient.assigned_rep_id === profile.id ||
-      patient.assigned_atp_id === profile.id
-    );
-  }
-  return false;
+  return (
+    task.status === "DONE_PENDING_REVIEW" &&
+    !!task.requires_atp_review &&
+    canApproveAtpReview(profile, patient)
+  );
 }
 
+/** Mark done: rep/ATP submit work + document link (required). */
 export function canShowMarkDone(
   profile: AppUser,
   patient: PatientAssignment,
   task: Pick<Task, "status" | "requires_atp_review">,
 ): boolean {
   if (task.status !== "IN_PROGRESS" && task.status !== "NOT_STARTED") return false;
-  if (!task.requires_atp_review) return false;
-  return (
-    hasRole(profile, "BOSS") ||
-    hasRole(profile, "MANAGER") ||
-    patient.assigned_rep_id === profile.id ||
-    patient.assigned_atp_id === profile.id
-  );
+  return canWorkOnPatient(profile, patient);
 }
