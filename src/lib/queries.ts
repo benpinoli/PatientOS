@@ -346,14 +346,6 @@ function scoreDashboardTask(
     ) {
       score += QUEUE_WEIGHTS.patientNextStep;
     }
-    if (
-      canApproveAtpReview(profile, patientCtx) &&
-      patientCtx.assigned_atp_id === profile.id &&
-      !isSoloAtpRep(patientCtx) &&
-      task.status === "DONE_PENDING_REVIEW"
-    ) {
-      score += QUEUE_WEIGHTS.pendingAtpReviewForApprover;
-    }
   }
 
   if (task.priority != null) {

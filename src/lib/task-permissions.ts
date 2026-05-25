@@ -97,15 +97,15 @@ export function canApproveAtpReview(
 }
 
 /**
- * Assigned ATP (or BOSS) can approve after rep submitted — any DONE_PENDING_REVIEW task.
- * Solo ATP-rep uses "Mark as done (signed)" instead.
+ * Approve UI when a task is waiting on ATP review and this user may sign off.
+ * Solo rep+ATP normally uses "Mark as done (signed)" on open steps, but steps already
+ * in DONE_PENDING_REVIEW (demo seed, reassignment, or shared-then-solo) still need Approve.
  */
 export function canShowApproveButton(
   profile: AppUser,
   patient: PatientAssignment,
   task: Pick<Task, "status">,
 ) {
-  if (isSoloAtpRep(patient)) return false;
   if (task.status !== "DONE_PENDING_REVIEW") return false;
   return canApproveAtpReview(profile, patient);
 }
