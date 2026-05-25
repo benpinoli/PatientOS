@@ -353,7 +353,7 @@ export function LatestLinkCell({
             ? "text-sm font-medium text-blue-600 underline decoration-blue-600/30 underline-offset-2"
             : "block max-w-[12rem] truncate text-xs text-blue-600 hover:underline"
         }
-        title={task.link}
+        title={href}
       >
         {task.link}
       </a>
