@@ -285,7 +285,7 @@ declare
   rep_roles text[];
   rep_supervising_atp_id uuid;
   final_atp_id uuid;
-  payer_type text;
+  v_payer_type text;
   patient_id uuid;
 begin
   if actor is null then
@@ -304,11 +304,11 @@ begin
 
   actor_roles := public.current_user_roles();
 
-  select type into payer_type
+  select type into v_payer_type
     from public.payers
    where id = p_payer_id;
 
-  if payer_type is null then
+  if v_payer_type is null then
     raise exception 'Payer not found.' using errcode = 'P0002';
   end if;
 
@@ -399,7 +399,7 @@ begin
     'NOT_STARTED',
     current_date + greatest(p_default_due_days, 0)
   from public.task_templates t
-  where t.payer_type = payer_type
+  where t.payer_type = v_payer_type
   order by t.default_order;
 
   return patient_id;

@@ -13,7 +13,8 @@ MIGRATIONS="$REPO_ROOT/supabase/migrations"
 cd "$INSTALL_DIR"
 
 for f in "$MIGRATIONS"/0004_supervising_atp.sql \
-         "$MIGRATIONS"/0005_harden_user_and_patient_workflows.sql; do
+         "$MIGRATIONS"/0005_harden_user_and_patient_workflows.sql \
+         "$MIGRATIONS"/0006_fix_create_patient_payer_type.sql; do
   if [[ -f "$f" ]]; then
     echo "==> $f"
     sudo docker compose -f docker-compose.yml -f docker-compose.override.yml exec -T db \
