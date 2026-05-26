@@ -78,15 +78,18 @@ Rule of thumb:
 - **UI / button / label change** → git push → Amplify (minutes).
 - **New column, new status, new table, RLS change** → migration on **EC2** (one-time per migration, needs SSH or someone who has it).
 
-### If you have AWS access but not SSH
+### If you have AWS access but SSH does not work
 
-Console access lets you **see** the EC2 instance; applying migrations still requires **SSH** into the server (`.pem` key) or asking whoever ran the initial setup (e.g. Addison) to run:
+You do **not** need a `.pem` file or PuTTY if you use **EC2 Instance Connect** (terminal inside the AWS website):
 
-```bash
-bash /tmp/choice-infra/scripts/apply-pending-migrations.sh
-```
+1. EC2 → Instances → `i-0c55b5678f0ec6cf7` → **Connect** → **EC2 Instance Connect** → **Connect**.
+2. Paste and run the one-liner from [`infra/aws/DEPLOYMENT.md`](infra/aws/DEPLOYMENT.md) § “Option A — Browser terminal”.
 
-That script is documented step-by-step in [`infra/aws/DEPLOYMENT.md`](infra/aws/DEPLOYMENT.md). You can confirm Amplify deploys yourself; coordinate EC2 database updates with whoever holds the SSH key.
+That downloads and applies migrations `0004`–`0011` (including **Awaiting signature**).
+
+From Windows, you can also run `infra/aws/scripts/apply-migrations-from-windows.ps1`, which fixes many SSH issues (wrong IP on the firewall rule, key permissions) before giving up.
+
+If both fail, ask whoever ran the initial EC2 setup for the `choice-tracker-key.pem` file or to run the browser script for you.
 
 ## 4. Data model
 
