@@ -6,11 +6,11 @@ import type { AppUser, Task } from "@/lib/db-types";
 import type { PatientAssignment } from "@/lib/task-permissions";
 import {
   canDoRepWorkflow,
-  canSaveTaskLink,
   canShowApproveButton,
   canShowMarkDone,
   canShowMarkDoneSigned,
   canShowSentForSignature,
+  canShowStartTask,
 } from "@/lib/task-permissions";
 import { normalizeExternalUrl } from "@/lib/urls";
 import {
@@ -19,7 +19,6 @@ import {
   completeTaskApproval,
   submitMarkDone,
   submitMarkDoneSigned,
-  submitTaskLink,
   submitSentForSignature,
   fetchTaskLinkHistory,
   type TaskLinkEvent,
@@ -130,8 +129,8 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
   const showApprove = canShowApproveButton(profile, patient, task);
   const showMarkDone = canShowMarkDone(profile, patient, task);
   const showMarkDoneSigned = canShowMarkDoneSigned(profile, patient, task);
-  const showSaveLink = canSaveTaskLink(profile, patient, task);
   const showSentForSignature = canShowSentForSignature(profile, patient, task);
+  const showStartTask = canShowStartTask(profile, patient, task);
   const repWorkflow = canDoRepWorkflow(profile, patient);
 
   useEffect(() => {
@@ -207,17 +206,6 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
       }
     });
 
-  const onSaveLink = () =>
-    start(async () => {
-      setError(null);
-      try {
-        await submitTaskLink(task.id, linkDraft.trim() || null);
-        afterMutation();
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Could not save link");
-      }
-    });
-
   const onSentForSignature = () =>
     start(async () => {
       setError(null);
@@ -250,6 +238,15 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
           (isCard ? "justify-stretch" : "justify-end")
         }
       >
+        {showStartTask && (
+          <ActionButton
+            disabled={pending}
+            label="Start task"
+            tone="primary-blue"
+            fullWidth={isCard}
+            onClick={() => flip("IN_PROGRESS")}
+          />
+        )}
         {showSentForSignature && (
           <ActionButton
             disabled={pending}
@@ -262,6 +259,7 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
         {task.status !== "BLOCKED" &&
           task.status !== "APPROVED" &&
           repWorkflow &&
+          !showStartTask &&
           !showMarkDone &&
           !showMarkDoneSigned &&
           !showApprove &&
@@ -293,37 +291,6 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
           onClick={() => setShowHistory((s) => !s)}
         />
       </div>
-
-      {showSaveLink && !showApprove && !showMarkDoneSigned && (
-        <div className="w-full space-y-3 rounded-lg border border-zinc-200 bg-white p-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-zinc-600">
-            Document link
-          </p>
-          <p className="text-sm text-zinc-600">
-            Saving the first link starts this step (in progress). For Doctor or PT
-            final signature, use Sent for signature when paperwork is out.
-          </p>
-          <label className="block text-sm font-medium text-zinc-700">
-            Link
-            <input
-              type="url"
-              inputMode="url"
-              autoComplete="url"
-              value={linkDraft}
-              onChange={(e) => setLinkDraft(e.target.value)}
-              placeholder="https://"
-              className="mt-1.5 w-full rounded-lg border border-zinc-300 bg-white px-3 py-3 text-base shadow-sm"
-            />
-          </label>
-          <ActionButton
-            disabled={pending || !linkDraft.trim()}
-            label="Save link"
-            tone="primary-blue"
-            fullWidth
-            onClick={onSaveLink}
-          />
-        </div>
-      )}
 
       {showMarkDoneSigned && (
         <DocumentLinkPanel

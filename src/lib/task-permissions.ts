@@ -128,14 +128,29 @@ export function canShowMarkDoneSigned(
   return isSoloAtpRep(patient) && patient.assigned_rep_id === profile.id;
 }
 
-/** Rep marks done and sends to ATP (link required). */
+/** Rep marks done and sends to ATP (link required). Only after task is started. */
 export function canShowMarkDone(
   profile: AppUser,
   patient: PatientAssignment,
   task: Pick<Task, "status" | "requires_atp_review">,
 ) {
-  if (!OPEN_REP_STATUSES.has(task.status)) return false;
+  if (task.status !== "IN_PROGRESS" && task.status !== "AWAITING_SIGNATURE") return false;
   if (canShowMarkDoneSigned(profile, patient, task)) return false;
+  return canDoRepWorkflow(profile, patient);
+}
+
+/**
+ * Explicit "Start task" button: moves NOT_STARTED → IN_PROGRESS.
+ * Only for non-solo reps; solo (rep+ATP) uses Mark-as-done-signed directly
+ * from NOT_STARTED to keep the one-click flow.
+ */
+export function canShowStartTask(
+  profile: AppUser,
+  patient: PatientAssignment,
+  task: Pick<Task, "status">,
+) {
+  if (task.status !== "NOT_STARTED") return false;
+  if (isSoloAtpRep(patient) && patient.assigned_rep_id === profile.id) return false;
   return canDoRepWorkflow(profile, patient);
 }
 
