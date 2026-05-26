@@ -65,7 +65,6 @@ export default async function PatientDetailPage({
           <div className="mt-1 text-sm text-zinc-500">
             Final signature: {ROLE_LABEL[nextStep.responsible_role]} · Status:{" "}
             {getTaskStatusLabel(nextStep.status)}
-            {nextStep.requires_atp_review && " · Requires ATP review"}
           </div>
         )}
       </div>

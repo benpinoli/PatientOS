@@ -44,11 +44,6 @@ export function PatientTaskTableDesktop({
                   <td className="px-4 py-3 text-xs text-zinc-500">{t.order_index}</td>
                   <td className="px-4 py-3">
                     <div className="text-zinc-800">{t.label}</div>
-                    {t.requires_atp_review && (
-                      <span className="mt-0.5 inline-block rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600">
-                        ATP review
-                      </span>
-                    )}
                     {t.blocked_reason && (
                       <div className="mt-1 text-xs italic text-red-600">
                         Blocked: {t.blocked_reason}

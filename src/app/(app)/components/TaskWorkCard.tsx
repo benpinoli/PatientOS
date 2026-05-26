@@ -81,11 +81,6 @@ export function TaskWorkCard({
             >
               {getTaskStatusLabel(task.status)}
             </span>
-            {task.requires_atp_review && (
-              <span className="inline-block rounded bg-zinc-100 px-2 py-0.5 text-[10px] font-medium text-zinc-600">
-                ATP review
-              </span>
-            )}
             {task.priority != null && (
               <span className="inline-block rounded bg-purple-100 px-2 py-0.5 text-[10px] font-medium text-purple-800">
                 Priority {task.priority}
