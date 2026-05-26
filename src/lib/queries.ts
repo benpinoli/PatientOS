@@ -170,6 +170,11 @@ function isActionableInTopFive(row: DashboardRow, profile: AppUser) {
     return false;
   }
 
+  // Snoozed/bounced tasks are hidden from the Top 5 until their timestamp passes.
+  if (row.snoozed_until && new Date(row.snoozed_until).getTime() > Date.now()) {
+    return false;
+  }
+
   return true;
 }
 

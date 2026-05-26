@@ -85,6 +85,8 @@ export type Task = {
   completed_by: string | null;
   completed_at: string | null;
   blocked_reason: string | null;
+  /** Bounce / snooze: while > now(), task is hidden from Top 5 dashboard. */
+  snoozed_until: string | null;
   created_at: string;
 };
 

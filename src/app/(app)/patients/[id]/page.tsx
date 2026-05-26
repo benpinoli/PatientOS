@@ -4,6 +4,7 @@ import { requireUser } from "@/lib/server-helpers";
 import { fetchPatientWithTasks, computeNextStep } from "@/lib/queries";
 import { getTaskStatusLabel, ROLE_LABEL } from "@/lib/format";
 import { PatientTaskListResponsive } from "../../components/PatientTaskListResponsive";
+import { DeletePatientButton } from "./DeletePatientButton";
 
 export const dynamic = "force-dynamic";
 
@@ -27,15 +28,32 @@ export default async function PatientDetailPage({
   const atp = users.find((u) => u.id === patient.assigned_atp_id);
   const nextStep = computeNextStep(tasks);
 
+  const canDelete =
+    profile.roles.includes("BOSS") ||
+    profile.roles.includes("MANAGER") ||
+    patient.assigned_rep_id === profile.id ||
+    patient.assigned_atp_id === profile.id;
+
   return (
     <div className="space-y-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <Link href="/patients" className="text-xs text-zinc-500 hover:underline">
+            ← All patients
+          </Link>
+          <h1 className="mt-1 text-2xl font-semibold text-zinc-900">
+            {patient.last_name}, {patient.first_name}
+          </h1>
+        </div>
+        {canDelete && (
+          <DeletePatientButton
+            patientId={patient.id}
+            patientName={`${patient.first_name} ${patient.last_name}`}
+            patientLastName={patient.last_name}
+          />
+        )}
+      </div>
       <div>
-        <Link href="/patients" className="text-xs text-zinc-500 hover:underline">
-          ← All patients
-        </Link>
-        <h1 className="mt-1 text-2xl font-semibold text-zinc-900">
-          {patient.last_name}, {patient.first_name}
-        </h1>
         <dl className="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
           <div>
             <dt className="text-xs font-medium uppercase text-zinc-400">Code</dt>

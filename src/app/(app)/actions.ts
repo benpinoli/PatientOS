@@ -307,6 +307,85 @@ export async function setTaskPriority(taskId: string, priority: number | null) {
   return updateTaskFields(taskId, { priority });
 }
 
+/**
+ * Bounce a task off the Top 5 dashboard for N days. The task stays
+ * fully workable on the patient detail page; it just stops surfacing
+ * at the top of the queue until snoozed_until passes.
+ *
+ * Pass days = 0 to clear the snooze (un-bounce).
+ */
+export async function bounceTask(taskId: string, days: number) {
+  const supabase = await getSupabaseServer();
+  let snoozed_until: string | null = null;
+  if (days > 0) {
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    snoozed_until = d.toISOString();
+  }
+  const { error } = await supabase
+    .from("tasks")
+    .update({ snoozed_until })
+    .eq("id", taskId);
+  if (error) throw new Error(error.message);
+  revalidatePath("/", "layout");
+}
+
+/**
+ * Delete a patient and all of its tasks. Permission gated:
+ * BOSS, MANAGER (on a direct report's patient), or the assigned
+ * rep/ATP may delete. `confirmLastName` MUST match the patient's
+ * actual last_name (case-insensitive trim) — this is the second
+ * confirmation step from the UI modal.
+ *
+ * Task rows cascade via `on delete cascade` on tasks.patient_id.
+ */
+export async function deletePatient(
+  patientId: string,
+  confirmLastName: string,
+) {
+  const supabase = await getSupabaseServer();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("You must be signed in.");
+
+  const { data: profile } = await supabase
+    .from("app_users")
+    .select("id, roles, active")
+    .eq("id", user.id)
+    .maybeSingle();
+  if (!profile?.active) throw new Error("Inactive accounts cannot delete patients.");
+  const roles: string[] = profile.roles ?? [];
+
+  const { data: patient, error: pErr } = await supabase
+    .from("patients")
+    .select("id, last_name, assigned_rep_id, assigned_atp_id")
+    .eq("id", patientId)
+    .maybeSingle();
+  if (pErr || !patient) throw new Error("Patient not found.");
+
+  const isAssignee =
+    patient.assigned_rep_id === user.id || patient.assigned_atp_id === user.id;
+  const isAdmin = roles.includes("BOSS") || roles.includes("MANAGER");
+  if (!isAssignee && !isAdmin) {
+    throw new Error("You are not allowed to delete this patient.");
+  }
+
+  // Belt-and-suspenders: verify the user typed the right last name.
+  const typed = (confirmLastName ?? "").trim().toLowerCase();
+  const actual = (patient.last_name ?? "").trim().toLowerCase();
+  if (!typed || typed !== actual) {
+    throw new Error(`Type the patient's last name (“${patient.last_name}”) to confirm.`);
+  }
+
+  const { error: dErr } = await supabase.from("patients").delete().eq("id", patientId);
+  if (dErr) throw new Error(dErr.message);
+
+  revalidatePath("/", "layout");
+  redirect("/patients");
+}
+
 // =====================================================================
 // New patient — atomic via create_patient_with_tasks() RPC.
 // =====================================================================

@@ -18,9 +18,12 @@ import {
   completeTaskApproval,
   submitMarkDone,
   submitMarkDoneSigned,
+  bounceTask,
   fetchTaskLinkHistory,
   type TaskLinkEvent,
 } from "./actions";
+
+const BOUNCE_DAYS = 3;
 
 type TaskActionsProps = {
   task: Task;
@@ -231,32 +234,46 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
             onClick={() => flip("IN_PROGRESS")}
           />
         )}
-        {task.status !== "BLOCKED" &&
+        {repWorkflow &&
           task.status !== "APPROVED" &&
-          repWorkflow &&
-          !showStartTask &&
-          !showMarkDone &&
-          !showMarkDoneSigned &&
-          !showApprove && (
-          <ActionButton
-            disabled={pending}
-            label="Block"
-            tone="secondary"
-            fullWidth={isCard}
-            onClick={() => flip("BLOCKED")}
-          />
-        )}
-        {task.status === "BLOCKED" && (
-          <ActionButton
-            disabled={pending}
-            label="Unblock"
-            tone="secondary"
-            fullWidth={isCard}
-            onClick={() =>
-              flip(task.link ? "IN_PROGRESS" : "NOT_STARTED")
-            }
-          />
-        )}
+          task.status !== "BLOCKED" &&
+          (task.snoozed_until && new Date(task.snoozed_until).getTime() > Date.now() ? (
+            <ActionButton
+              disabled={pending}
+              label="Un-bounce"
+              tone="secondary"
+              fullWidth={isCard}
+              onClick={() =>
+                start(async () => {
+                  setError(null);
+                  try {
+                    await bounceTask(task.id, 0);
+                    afterMutation();
+                  } catch (e) {
+                    setError(e instanceof Error ? e.message : "Could not un-bounce");
+                  }
+                })
+              }
+            />
+          ) : (
+            <ActionButton
+              disabled={pending}
+              label={`Bounce ${BOUNCE_DAYS}d`}
+              tone="secondary"
+              fullWidth={isCard}
+              onClick={() =>
+                start(async () => {
+                  setError(null);
+                  try {
+                    await bounceTask(task.id, BOUNCE_DAYS);
+                    afterMutation();
+                  } catch (e) {
+                    setError(e instanceof Error ? e.message : "Could not bounce");
+                  }
+                })
+              }
+            />
+          ))}
         <ActionButton
           disabled={pending}
           label="Link history"
