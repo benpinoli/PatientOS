@@ -9,7 +9,6 @@ import {
   canShowApproveButton,
   canShowMarkDone,
   canShowMarkDoneSigned,
-  canShowSentForSignature,
   canShowStartTask,
 } from "@/lib/task-permissions";
 import { normalizeExternalUrl } from "@/lib/urls";
@@ -19,7 +18,6 @@ import {
   completeTaskApproval,
   submitMarkDone,
   submitMarkDoneSigned,
-  submitSentForSignature,
   fetchTaskLinkHistory,
   type TaskLinkEvent,
 } from "./actions";
@@ -129,7 +127,6 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
   const showApprove = canShowApproveButton(profile, patient, task);
   const showMarkDone = canShowMarkDone(profile, patient, task);
   const showMarkDoneSigned = canShowMarkDoneSigned(profile, patient, task);
-  const showSentForSignature = canShowSentForSignature(profile, patient, task);
   const showStartTask = canShowStartTask(profile, patient, task);
   const repWorkflow = canDoRepWorkflow(profile, patient);
 
@@ -206,19 +203,6 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
       }
     });
 
-  const onSentForSignature = () =>
-    start(async () => {
-      setError(null);
-      try {
-        await submitSentForSignature(task.id);
-        afterMutation();
-      } catch (e) {
-        setError(
-          e instanceof Error ? e.message : "Could not mark sent for signature",
-        );
-      }
-    });
-
   return (
     <div
       className={
@@ -247,23 +231,13 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
             onClick={() => flip("IN_PROGRESS")}
           />
         )}
-        {showSentForSignature && (
-          <ActionButton
-            disabled={pending}
-            label="Sent for signature"
-            tone="primary-blue"
-            fullWidth={isCard}
-            onClick={onSentForSignature}
-          />
-        )}
         {task.status !== "BLOCKED" &&
           task.status !== "APPROVED" &&
           repWorkflow &&
           !showStartTask &&
           !showMarkDone &&
           !showMarkDoneSigned &&
-          !showApprove &&
-          !showSentForSignature && (
+          !showApprove && (
           <ActionButton
             disabled={pending}
             label="Block"
