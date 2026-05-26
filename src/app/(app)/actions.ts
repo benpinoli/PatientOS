@@ -307,28 +307,10 @@ export async function setTaskPriority(taskId: string, priority: number | null) {
   return updateTaskFields(taskId, { priority });
 }
 
-/**
- * Bounce a task off the Top 5 dashboard for N days. The task stays
- * fully workable on the patient detail page; it just stops surfacing
- * at the top of the queue until snoozed_until passes.
- *
- * Pass days = 0 to clear the snooze (un-bounce).
- */
-export async function bounceTask(taskId: string, days: number) {
-  const supabase = await getSupabaseServer();
-  let snoozed_until: string | null = null;
-  if (days > 0) {
-    const d = new Date();
-    d.setDate(d.getDate() + days);
-    snoozed_until = d.toISOString();
-  }
-  const { error } = await supabase
-    .from("tasks")
-    .update({ snoozed_until })
-    .eq("id", taskId);
-  if (error) throw new Error(error.message);
-  revalidatePath("/", "layout");
-}
+// NOTE: bounceTask() was removed. Bounce is now per-browser via
+// localStorage (src/lib/bounce-store.ts) because migration 0012 has not
+// been applied to production yet. Re-introduce a server-backed version
+// when 0012 lands and you want cross-device snooze sync.
 
 /**
  * Delete a patient and all of its tasks. Permission gated:

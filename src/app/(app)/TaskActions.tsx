@@ -18,10 +18,15 @@ import {
   completeTaskApproval,
   submitMarkDone,
   submitMarkDoneSigned,
-  bounceTask,
   fetchTaskLinkHistory,
   type TaskLinkEvent,
 } from "./actions";
+import {
+  bounce as bounceLocally,
+  isBounced as isBouncedLocally,
+  subscribeBounces,
+  unBounce as unBounceLocally,
+} from "@/lib/bounce-store";
 
 const BOUNCE_DAYS = 3;
 
@@ -133,6 +138,15 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
   const showStartTask = canShowStartTask(profile, patient, task);
   const repWorkflow = canDoRepWorkflow(profile, patient);
 
+  // Local-only snooze state (per-browser). Mirrors localStorage and re-renders
+  // when another tab writes the bounce store too.
+  const [bounced, setBounced] = useState(false);
+  useEffect(() => {
+    const sync = () => setBounced(isBouncedLocally(task.id));
+    sync();
+    return subscribeBounces(sync);
+  }, [task.id]);
+
   useEffect(() => {
     if (!showHistory) return;
     start(async () => {
@@ -237,23 +251,16 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
         {repWorkflow &&
           task.status !== "APPROVED" &&
           task.status !== "BLOCKED" &&
-          (task.snoozed_until && new Date(task.snoozed_until).getTime() > Date.now() ? (
+          (bounced ? (
             <ActionButton
               disabled={pending}
               label="Un-bounce"
               tone="secondary"
               fullWidth={isCard}
-              onClick={() =>
-                start(async () => {
-                  setError(null);
-                  try {
-                    await bounceTask(task.id, 0);
-                    afterMutation();
-                  } catch (e) {
-                    setError(e instanceof Error ? e.message : "Could not un-bounce");
-                  }
-                })
-              }
+              onClick={() => {
+                unBounceLocally(task.id);
+                afterMutation();
+              }}
             />
           ) : (
             <ActionButton
@@ -261,17 +268,10 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
               label={`Bounce ${BOUNCE_DAYS}d`}
               tone="secondary"
               fullWidth={isCard}
-              onClick={() =>
-                start(async () => {
-                  setError(null);
-                  try {
-                    await bounceTask(task.id, BOUNCE_DAYS);
-                    afterMutation();
-                  } catch (e) {
-                    setError(e instanceof Error ? e.message : "Could not bounce");
-                  }
-                })
-              }
+              onClick={() => {
+                bounceLocally(task.id, BOUNCE_DAYS);
+                afterMutation();
+              }}
             />
           ))}
         <ActionButton

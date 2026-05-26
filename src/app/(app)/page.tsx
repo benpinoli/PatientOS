@@ -1,7 +1,7 @@
 import { requireUser } from "@/lib/server-helpers";
 import { fetchDashboardBundle, fetchPayerTypes } from "@/lib/queries";
 import { DashboardPatientMatrix } from "./components/DashboardPatientMatrix";
-import { TaskQueueResponsive } from "./components/TaskQueueResponsive";
+import { Top5WithBounce } from "./components/Top5WithBounce";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +23,7 @@ export default async function DashboardPage() {
             below.
           </p>
         </div>
-        <TaskQueueResponsive rows={topFive} profile={profile} />
+        <Top5WithBounce rows={topFive} profile={profile} />
       </section>
 
       <section className="space-y-3">
