@@ -11,6 +11,7 @@ in the app. This sidesteps the cost of a BAA-covered document platform
 while the team validates whether the tracker alone solves the workflow.
 
 For the full system tour, see [`ARCHITECTURE.md`](./ARCHITECTURE.md).
+**New to AWS?** See [§3 For non-technical operators](./ARCHITECTURE.md#3-for-non-technical-operators--aws-amplify-and-ec2) (what EC2 is, how to find it in the console, Amplify vs the database server).
 For the orientation pack a future Claude/dev should read end-to-end,
 see [`CLAUDE.md`](./CLAUDE.md).
 

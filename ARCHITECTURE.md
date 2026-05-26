@@ -12,7 +12,83 @@ Choice Healthcare is a small medical-equipment provider whose staff currently tr
 - **Hosting**: AWS Amplify for the Next.js app, with Supabase self-hosted on AWS EC2.
 - **Local Supabase config**: `supabase/config.toml` declares the Azure external provider and email auth on ports 54321/54322/54323.
 
-## 3. Data model
+## 3. For non-technical operators — AWS, Amplify, and EC2
+
+This section is for people who use the tracker daily and have AWS console access but do not live in DevOps jargon.
+
+### Two places, two jobs
+
+| What you use | AWS product name | What it stores / runs | Updates when… |
+|--------------|------------------|---------------------|---------------|
+| The website in the browser | **Amplify** | The Next.js app (screens, buttons, logic) | You push code to GitHub (`main`); Amplify rebuilds automatically |
+| Patients, tasks, logins, passwords | **EC2** (+ Docker Supabase on that server) | Postgres database + auth API | Someone runs **database migrations** on the server (not automatic with a git push) |
+
+**EC2** (Elastic Compute Cloud) is simply Amazon’s name for a **rented computer in the cloud**. For Choice Healthcare, one EC2 machine hosts the **database**. The team often says “EC2” or “the server” when they mean that machine—not the Amplify website.
+
+**Amplify** hosts the **app UI** only. It talks to the database over the network (via a secure proxy). Changing the app does not change the database schema unless migrations are applied on EC2.
+
+### Choice Healthcare identifiers (production)
+
+| Piece | Where to look |
+|-------|----------------|
+| Live app URL | `https://main.d2na0dxbmaa2o4.amplifyapp.com` |
+| Database server IP | `44.253.198.43` (Elastic IP on the EC2 instance) |
+| EC2 instance ID | `i-0c55b5678f0ec6cf7` |
+| AWS region | **US West (Oregon)** — `us-west-2` |
+| Amplify app ID | `d2na0dxbmaa2o4` |
+| Supabase install path on the server | `/opt/choice-supabase` |
+
+Operational detail (SSH, env vars, migration scripts): [`infra/aws/DEPLOYMENT.md`](infra/aws/DEPLOYMENT.md).
+
+### How to find EC2 in the AWS Console
+
+1. Sign in at [https://console.aws.amazon.com/](https://console.aws.amazon.com/) with the Choice Healthcare account (or the account your admin invited you to).
+2. **Set the region** (top-right, near your username). Choose **US West (Oregon) / us-west-2**. EC2 resources are regional—wrong region shows an empty list.
+3. Open **EC2**:
+   - Use the search bar at the top, type **EC2**, click **EC2** under Services, or
+   - Menu ☰ → **Compute** → **EC2**.
+4. In the left sidebar, click **Instances** → **Instances**.
+5. Find the tracker database server:
+   - Look for instance ID **`i-0c55b5678f0ec6cf7`**, or
+   - Look for **Public IPv4 address** **`44.253.198.43`**, or
+   - Look for a name tag like `choice-supabase` if your team added one.
+
+That row is “the EC2 box.” You do **not** need to start/stop it for normal app use. Stopping it would take the database offline for everyone.
+
+Other useful EC2 sidebar items (read-only for most users):
+
+- **Elastic IPs** — shows `44.253.198.43` attached to the instance (stable address).
+- **Security groups** — firewall rules (usually left to whoever set up the server).
+
+### How to find Amplify (the website hosting)
+
+1. Same AWS login and region (**us-west-2** is typical for this project; Amplify apps are also region-scoped).
+2. Search **Amplify** in the top bar → **AWS Amplify**.
+3. Open the app **`d2na0dxbmaa2o4`** (or the app whose domain is `main.d2na0dxbmaa2o4.amplifyapp.com`).
+4. Branch **main** → recent deploys show whether a git push finished building.
+
+Redeploying or env vars for the app are done here—not in EC2.
+
+### “I pushed code—why didn’t the database feature work?”
+
+Example: **Sent for signature** needs a new task status in Postgres. The app code on Amplify may be up to date, but the database must allow status `AWAITING_SIGNATURE`. That requires migration **`0011_task_awaiting_signature_status.sql`** (and related migrations) on **EC2**, via the script in [`infra/aws/DEPLOYMENT.md`](infra/aws/DEPLOYMENT.md) § “Apply database migrations.”
+
+Rule of thumb:
+
+- **UI / button / label change** → git push → Amplify (minutes).
+- **New column, new status, new table, RLS change** → migration on **EC2** (one-time per migration, needs SSH or someone who has it).
+
+### If you have AWS access but not SSH
+
+Console access lets you **see** the EC2 instance; applying migrations still requires **SSH** into the server (`.pem` key) or asking whoever ran the initial setup (e.g. Addison) to run:
+
+```bash
+bash /tmp/choice-infra/scripts/apply-pending-migrations.sh
+```
+
+That script is documented step-by-step in [`infra/aws/DEPLOYMENT.md`](infra/aws/DEPLOYMENT.md). You can confirm Amplify deploys yourself; coordinate EC2 database updates with whoever holds the SSH key.
+
+## 4. Data model
 
 ```mermaid
 erDiagram
@@ -84,7 +160,7 @@ In v1 a **patient row represents one active pursuit** — patient and "case" are
 
 Allowed enum values are enforced with `check` constraints rather than Postgres `ENUM` types — easier to edit in a migration.
 
-## 4. Auth flow
+## 5. Auth flow
 
 1. User hits any protected path. `src/proxy.ts` checks for a Supabase session cookie via `supabase.auth.getUser()` and, if absent, 302s to `/login?next=<path>`.
 2. `/login` renders providers from `enabledProviders()` (`src/lib/auth-providers.ts`). The default primary is Microsoft/Azure; Google is wired but disabled by default; email+password is enabled for local dev seed users.
@@ -102,7 +178,7 @@ Browser  ──signInWithOAuth──▶  Microsoft/Azure
 
 Providers are **config-driven**: enabling Google or email magic-link later is a `NEXT_PUBLIC_AUTH_*_ENABLED` flag flip plus, for OAuth, a Supabase dashboard toggle — no UI rewrite.
 
-## 5. RLS / visibility model
+## 6. RLS / visibility model
 
 Four roles live in `app_users.roles text[]`: `REP`, `ATP`, `MANAGER`, `BOSS`. A user can hold multiple (e.g. Matt is `{MANAGER, ATP}` in seed data). Most permissive matching policy wins.
 
@@ -124,7 +200,7 @@ Visibility in plain English:
 
 The `with check` clauses are intentionally slightly stricter than `using` so a Rep can't reassign a patient off themselves.
 
-## 6. The ATP approval gate
+## 7. The ATP approval gate
 
 RLS controls *which rows* you can touch, not *which column values* you can write. The business rule "only the assigned ATP may flip a task with `requires_atp_review=true` to `status='APPROVED'`" is therefore enforced by a `BEFORE UPDATE` trigger, `public.enforce_task_approval_gate()` (migration `0003_approve_gate.sql`).
 
@@ -137,7 +213,7 @@ Logic (only runs when the new status is `APPROVED` *and* `requires_atp_review=tr
 
 The same trigger stamps `completed_at = now()` and `completed_by = auth.uid()` whenever a task enters `APPROVED` or `DONE_PENDING_REVIEW`.
 
-## 7. Core algorithms
+## 8. Core algorithms
 
 Both are implemented in `src/lib/queries.ts` (`computeNextStep` and `fetchDashboardTasks`).
 
@@ -152,7 +228,7 @@ back to due date and then workflow order.
 
 `isOverdue()` in `src/lib/format.ts` already encodes the "due_date < today" badge logic.
 
-## 8. Directory layout
+## 9. Directory layout
 
 ```text
 src/
@@ -198,7 +274,7 @@ supabase/
   seed.sql                      # 5 auth users + roles + payers + templates + 9 patients
 ```
 
-## 9. Out of scope for v1
+## 10. Out of scope for v1
 
 The spec explicitly defers anything that would require a Business Associate Agreement on the Supabase tier or that adds vendor complexity without changing the core workflow:
 
@@ -210,7 +286,7 @@ The spec explicitly defers anything that would require a Business Associate Agre
 
 The driving reason cited in the spec is **BAA cost avoidance** while the system is validated — running on Supabase's free tier means no PHI in the database, hence no document blobs and no PHI-bearing notifications.
 
-## 10. Going to production
+## 11. Going to production
 
 v1 dev is on hosted Supabase with synthetic seed data. The chosen production path is AWS:
 

@@ -23,7 +23,7 @@ export REPO_ROOT=/tmp/choice-repo
 bash /tmp/choice-infra/scripts/apply-pending-migrations.sh
 ```
 
-This applies `0004_supervising_atp.sql` (ATP auto-assign) and `0005_patient_insert_policy.sql` (patient INSERT RLS).
+This applies migrations `0004` through `0011` (see the script list in `apply-pending-migrations.sh`), including ATP supervisor, patient workflows, payer types, and **Awaiting signature** task status.
 
 Fresh installs: `apply-schema.sh` or `remote-setup-all.sh` runs **all** `supabase/migrations/*.sql` in order.
 
