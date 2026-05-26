@@ -248,8 +248,7 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
             onClick={() => flip("IN_PROGRESS")}
           />
         )}
-        {repWorkflow &&
-          task.status !== "APPROVED" &&
+        {task.status !== "APPROVED" &&
           task.status !== "BLOCKED" &&
           (bounced ? (
             <ActionButton
