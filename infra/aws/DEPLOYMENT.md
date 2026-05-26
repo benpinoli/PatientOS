@@ -69,6 +69,56 @@ ssh -i $env:USERPROFILE\.ssh\choice-tracker-key.pem ubuntu@44.253.198.43
 
 **Do not** open Postgres port **5432** to the public internet. Migrations run **inside** Docker on the instance (`docker compose exec db psql`), not from your laptop to port 5432.
 
+### Option C — AWS CloudShell (when EC2 Instance Connect tab fails)
+
+Your **My IP** rule only allows SSH from your house/office. **CloudShell** and the browser connect proxy use **different** AWS addresses, so they still get blocked. Fix: add one **temporary** SSH rule, use CloudShell, then remove the rule.
+
+#### C1. Temporary firewall (2 minutes)
+
+1. EC2 → **Security Groups** → **choice-tracker-sg** (`sg-07721f9fedc45d2fa`).
+2. **Inbound rules** → **Edit inbound rules** → **Add rule**:
+   - Type: **SSH**, Port **22**, Source: **Anywhere-IPv4** (`0.0.0.0/0`)
+   - Description: `TEMP migration — delete after`
+3. **Save rules**. (Leave your existing **My IP** rules; adding one more is fine.)
+
+#### C2. Open CloudShell
+
+1. Region (top-right): **US West (Oregon)**.
+2. Click the **CloudShell** icon (terminal) in the **top** navigation bar (not the bottom status bar on every layout).
+3. Wait until you see a prompt like `~ $`.
+
+#### C3. Connect to the server (no `.pem` file)
+
+Paste this **whole block** into CloudShell and press Enter:
+
+```bash
+export AWS_DEFAULT_REGION=us-west-2
+ssh-keygen -t rsa -f ~/ec2-temp -N "" -q
+aws ec2-instance-connect send-ssh-public-key \
+  --instance-id i-0c55b5678f0ec6cf7 \
+  --instance-os-user ubuntu \
+  --ssh-public-key "file://$HOME/ec2-temp.pub"
+ssh -i ~/ec2-temp -o StrictHostKeyChecking=no -o ConnectTimeout=15 ubuntu@44.253.198.43
+```
+
+You should see an `ubuntu@ip-...` prompt. (If `send-ssh-public-key` errors with **AccessDenied**, your IAM user needs `ec2-instance-connect:SendSSHPublicKey` — ask the account admin.)
+
+#### C4. Run migrations (on the server)
+
+At the `ubuntu@...` prompt, paste:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/benpinoli/Choice-Healthcare-Task-System/main/infra/aws/scripts/apply-migrations-browser-shell.sh | bash
+```
+
+Wait for **Done** and **AWAITING_SIGNATURE**. Type `exit` to leave SSH.
+
+#### C5. Lock down again (recommended)
+
+Security group → **Edit inbound rules** → delete the **Anywhere / 0.0.0.0/0** SSH rule you added in C1 → **Save rules**.
+
+You can keep **My IP** on port 22 for future admin work.
+
 ## 2. Local dev (`.env.local`)
 
 ```env
