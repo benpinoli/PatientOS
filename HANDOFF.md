@@ -1,12 +1,57 @@
 # Handoff — paste this into your Claude conversation
 
-**Status as of 2026-05-23 (evening).** Project is mid-pivot. App works end-to-end against a hosted Supabase backend; we're about to migrate the backend off of managed Supabase onto self-hosted Supabase on AWS. Next.js front-end will deploy to AWS Amplify. Two recent feature changes (ATP supervisor relationship + default 14-day due dates) have shipped on `build/v1-tracker`.
+**Status as of 2026-06-08.** The AWS migration is **done and live** — the app is deployed on AWS Amplify, pointed at a self-hosted Supabase stack running on EC2 in us-west-2. Multiple feature rounds have shipped since the May handoff (sent-for-signature / `AWAITING_SIGNATURE`, admin-managed payer types, task bounce/snooze, patient delete, UI cleanups). The active branch is now **`main`** (Amplify auto-deploys from it); `build/v1-tracker` is stale and should not be used.
 
-Read this whole file in your first conversation so your Claude has the full picture. Companion files in the repo: `README.md`, `ARCHITECTURE.md`, `CLAUDE.md` (the persistent context pack — read that second).
+Read this whole file in your first conversation so your Claude has the full picture. Companion files in the repo: `README.md`, `ARCHITECTURE.md` (has the live production identifiers + non-technical AWS guide), `CLAUDE.md` (the persistent context pack — read that second), and `infra/aws/DEPLOYMENT.md` (SSH, env vars, migration scripts for the live server).
 
 ---
 
-## What changed since 2026-05-23 morning (delta from prior handoff)
+## Production deployment (live as of 2026-06-08)
+
+The app is no longer "about to migrate" — it's deployed. Identifiers (also in `ARCHITECTURE.md` §3):
+
+| Piece | Value |
+|---|---|
+| Live app URL | `https://main.d2na0dxbmaa2o4.amplifyapp.com` |
+| Amplify app ID | `d2na0dxbmaa2o4` (builds from branch `main`) |
+| Database server (EC2) | instance `i-0c55b5678f0ec6cf7`, Elastic IP `44.253.198.43` |
+| AWS region | `us-west-2` (US West / Oregon) |
+| Supabase install path | `/opt/choice-supabase` on the EC2 box |
+| Ops runbook | `infra/aws/DEPLOYMENT.md` (SSH, env, migration scripts incl. browser/Windows helpers) |
+
+**Code → Amplify is automatic** (push to `main` rebuilds the UI). **Schema changes are NOT** — a new migration must be applied on EC2 by hand (SSH, EC2 Instance Connect, or the helper scripts in `infra/aws/scripts/`). This split is why migration `0012` is in the repo but not yet live (see below).
+
+> **Still synthetic-data-only until HIPAA hardening is signed off.** The EC2 stack exists, but the §"HIPAA-relevant hardening" checklist (backups to S3, pg_audit, CloudTrail, key rotation, breach-notification doc) must be completed before any real PHI lands. Don't load real patients yet.
+
+---
+
+## What changed since the 2026-05-23 handoff (delta)
+
+Several rounds of work landed on `main` between 2026-05-23 and 2026-06-08:
+
+1. **AWS migration completed.** Self-hosted Supabase on EC2 + Amplify deploy are live (see the table above). The step-by-step plan that used to be "the next big piece of work" is now the historical record in the "AWS migration" section near the bottom — keep it for reference, but it's done.
+
+2. **Migrations grew `0005` → `0012`:**
+   - `0006_fix_create_patient_payer_type.sql` — fix ambiguous `payer_type` reference in `create_patient_with_tasks` (PL/pgSQL var vs. column).
+   - `0007_task_link_history.sql` — per-task link history (rep/ATP submissions); latest URL still mirrored on `tasks.link`.
+   - `0008_requires_atp_review_default_true.sql` — every task requires ATP review by default now (tune per-template later).
+   - `0009_payer_types_admin.sql` — **dynamic, admin-managed payer/patient types**; replaces the hard-coded `CHECK` constraints with a `payer_types` table + FK. (CLAUDE.md's "add a payer type = alter a CHECK constraint" recipe is now partly outdated — types are data, managed in the admin UI.)
+   - `0010_ensure_builtin_payer_types.sql` — re-seeds the built-in types idempotently (safe if 0009 already ran).
+   - `0011_task_awaiting_signature_status.sql` — adds `AWAITING_SIGNATURE` task status for tasks waiting on an external Doctor/PT signature.
+   - `0012_task_snoozed_until.sql` — adds `tasks.snoozed_until` for server-backed task bounce/snooze. **⚠ NOT YET APPLIED to production** — so the shipped bounce feature uses per-browser `localStorage` instead (see below).
+
+3. **Feature changes (all on `main`):**
+   - **Task bounce / snooze** — temporarily push a task off the Top-5 dashboard. Implemented **per-browser via `localStorage`** (`src/lib/bounce-store.ts` + `src/app/(app)/components/Top5WithBounce.tsx`) because migration `0012` isn't live yet. The server-backed `bounceTask()` action was removed; re-introduce it when `0012` lands and you want cross-device snooze sync (note left in `actions.ts`). ATPs/managers can bounce from their own view.
+   - **Patient delete** — `deletePatient()` server action; permission-gated (BOSS, MANAGER on a direct report, or assigned rep/ATP) with a last-name-confirmation modal. Tasks cascade via `on delete cascade`.
+   - **Sent-for-signature flow** — rep-only, uses the new `AWAITING_SIGNATURE` status; the "Final signature" column (formerly "Awaiting").
+   - **UI cleanups** — explicit "Start task" button (replaced the bare save-link box and an earlier auto-start-on-first-link behavior); removed the broken "Sent for signature" button and the "ATP review" badge; Top-5 limited to patients where the user is the assigned rep or ATP.
+   - **Dropped "Block"** — the old BLOCKED affordance was removed from the task UI in favor of bounce. (`tasks.status` still allows `BLOCKED` at the DB level; it's just not surfaced in the UI.)
+
+4. **`db-types.ts` updated** for the new columns/statuses (`snoozed_until`, link history, `AWAITING_SIGNATURE`, dynamic payer types). Still hand-written — keep editing it by hand.
+
+---
+
+## What changed on 2026-05-23 evening (older delta — historical)
 
 Two feature changes have landed on `build/v1-tracker`. Both are also already applied to the production Supabase database at `ftxxexwzrhyrqjguagbi.supabase.co` (migration applied, seed values backfilled, NULL due_dates on existing tasks filled in too).
 
@@ -40,17 +85,18 @@ The customer (Choice) doesn't currently pay for the dev work; we're doing it for
 ## Where we are right now
 
 ✅ **Done:**
-- Schema: 5 tables (`app_users`, `payers`, `patients`, `task_templates`, `tasks`) + RLS policies + ATP-review-gate trigger + supervising_atp column. Migrations `0001_init.sql` → `0004_supervising_atp.sql` in `supabase/migrations/`. Working on hosted Supabase at `https://ftxxexwzrhyrqjguagbi.supabase.co`.
-- Seed: 5 demo users (DeAnne / Matt / Steve / Tara / Jack, all `password123`), 3 payers, all template rows, 9 patients with varied states, supervising_atp_id wired for Tara → Steve and Jack → Matt. In `supabase/seed.sql`.
-- Next.js front-end: login, dashboard with priority queue, patient list, patient detail with computed next-step, **reactive** new-patient form (rep selection auto-fills ATP), admin screen for user activation + roles + ATP supervisor. App passes `npx tsc --noEmit` and `npx next build`.
+- Schema: 5 tables (`app_users`, `payers`, `patients`, `task_templates`, `tasks`) + RLS policies + ATP-review-gate trigger + supervising_atp + dynamic payer types + link history + `AWAITING_SIGNATURE` status. Migrations `0001_init.sql` → `0012_task_snoozed_until.sql` in `supabase/migrations/` (note: `0012` not yet applied to production — see the delta section).
+- Seed: 5 demo users (DeAnne / Matt / Steve / Tara / Jack, all `password123`), payers, all template rows, 9 patients with varied states, supervising_atp_id wired for Tara → Steve and Jack → Matt. In `supabase/seed.sql`.
+- Next.js front-end: login, dashboard with priority queue + Top-5 (with bounce/snooze), patient list, patient detail with computed next-step + patient delete, **reactive** new-patient form (rep selection auto-fills ATP), sent-for-signature flow, admin screen for user activation + roles + ATP supervisor + payer-type management. App passes `npx tsc --noEmit` and `npx next build`.
 - Default 14-day due dates wired into both server-action and seed-side task instantiation.
-- Local dev: works at `localhost:3000`. `npm run dev` boots Next, talks to hosted Supabase.
-- Pushed to GitHub: `https://github.com/benpinoli/Choice-Healthcare-Task-System`. Active branch: `build/v1-tracker`. `main` has the prior handoff commit but not the two new feature commits until they're pushed.
+- **Deployed to production on AWS:** self-hosted Supabase on EC2 (`44.253.198.43`, us-west-2) + Next.js on Amplify (`https://main.d2na0dxbmaa2o4.amplifyapp.com`). See the "Production deployment" section above and `infra/aws/DEPLOYMENT.md`.
+- Local dev: works at `localhost:3000`. `npm run dev` boots Next, talks to whichever Supabase URL is in `.env.local`.
+- Pushed to GitHub: `https://github.com/benpinoli/Choice-Healthcare-Task-System`. **Active branch: `main`** (Amplify deploys from it). `build/v1-tracker` is stale (~34 commits behind `main`) — don't branch from it.
 
 🟡 **In progress / next:**
-- Self-host Supabase on AWS (EC2 + Docker Compose, us-west-2). **Addison's partner is currently working on the EC2 setup.**
-- Deploy Next.js to AWS Amplify pointed at the new Supabase URL.
-- After cutover, retire the managed Supabase project.
+- **Apply migration `0012` to the production EC2 Postgres**, then swap task bounce from `localStorage` back to a server-backed `snoozed_until` (cross-device sync). See the note in `src/app/(app)/actions.ts`.
+- **HIPAA-relevant hardening** before real PHI: nightly `pg_dump` → encrypted S3, `pg_audit` → CloudWatch, CloudTrail, IAM key rotation, breach-notification one-pager. (EBS encryption was enabled at launch.) Detail in the "AWS migration" hardening step below.
+- Then: load the real staff roster, configure Azure SSO, disable dev email/password signup, and cut over to real patient data.
 
 ❌ **Explicitly out of scope for v1 (don't build):**
 - Document storage / upload
@@ -170,17 +216,33 @@ Read this section to know what file does what.
 │   └── hooks/
 │       └── check-gstack.sh    # Blocks Skill use unless ~/.claude/skills/gstack/bin exists
 ├── package.json, tsconfig.json, next.config.ts, postcss.config.mjs
+├── infra/                     # AWS deployment (self-hosted Supabase on EC2 + Amplify)
+│   └── aws/
+│       ├── DEPLOYMENT.md      # Ops runbook: SSH, env vars, applying migrations on EC2
+│       ├── README.md          # infra overview
+│       ├── caddy/             # Caddyfile (reverse proxy + Let's Encrypt)
+│       ├── docker/            # trimmed Supabase docker-compose for the EC2 box
+│       └── scripts/           # migration helpers (browser/EC2 Instance Connect, Windows PS1)
 ├── supabase/
-│   ├── config.toml            # Local supabase CLI config (unused once we move to AWS)
+│   ├── config.toml            # Local supabase CLI config
 │   ├── seed.sql               # 5 users + payers + templates + 9 patients (synthetic only)
-│   │                          # Tara/Jack now get supervising_atp_id; tasks stamped with
+│   │                          # Tara/Jack get supervising_atp_id; tasks stamped with
 │   │                          # due_date = patient.created_at + 14
 │   └── migrations/
 │       ├── 0001_init.sql               # 5 tables, indexes, handle_new_auth_user trigger
 │       ├── 0002_rls.sql                # RLS helpers + per-table policies
 │       ├── 0003_approve_gate.sql       # ATP review gate trigger
 │       ├── 0004_supervising_atp.sql    # adds app_users.supervising_atp_id
-│       └── 0005_harden_user_and_patient_workflows.sql # RPC hardening + atomic create
+│       ├── 0005_harden_user_and_patient_workflows.sql # RPC hardening + atomic create
+│       ├── 0006_fix_create_patient_payer_type.sql     # fix ambiguous payer_type in RPC
+│       ├── 0007_task_link_history.sql                 # per-task link submission history
+│       ├── 0008_requires_atp_review_default_true.sql  # ATP review default → true
+│       ├── 0009_payer_types_admin.sql                 # dynamic admin-managed payer types
+│       ├── 0010_ensure_builtin_payer_types.sql        # idempotent built-in type re-seed
+│       ├── 0011_task_awaiting_signature_status.sql    # AWAITING_SIGNATURE status
+│       ├── 0012_task_snoozed_until.sql                # tasks.snoozed_until (⚠ NOT live yet)
+│       ├── 0013_task_notes.sql                        # append-only per-task notes
+│       └── 0014_notifications.sql                     # in-app rep<->ATP notifications (⚠ apply on EC2)
 └── src/
     ├── proxy.ts               # Cookie refresh + auth gate (Next 16 proxy convention)
     ├── app/
@@ -194,13 +256,15 @@ Read this section to know what file does what.
     │   │   └── signout/route.ts    # POST → signOut → /login
     │   └── (app)/             # Authed shell
     │       ├── layout.tsx     # Nav (Dashboard / Patients / New patient / Admin if admin)
-    │       ├── page.tsx       # Dashboard: priority queue across all visible tasks
+    │       ├── page.tsx       # Dashboard: priority queue + Top-5 (with bounce) across visible tasks
     │       ├── actions.ts     # Server actions: updateTaskStatus, updateTaskFields,
-    │       │                  #                 createPatient, updateUser
-    │       │                  #   createPatient now: (a) derives assigned_atp_id from rep
-    │       │                  #   if not supplied, (b) errors if no ATP can be derived,
-    │       │                  #   (c) stamps every task with due_date = today + 14.
-    │       │                  #   updateUser accepts supervising_atp_id.
+    │       │                  #                 createPatient, updateUser, deletePatient
+    │       │                  #   createPatient: derives assigned_atp_id from rep, errors if
+    │       │                  #   none derivable, stamps tasks with due_date = today + 14.
+    │       │                  #   deletePatient: gated + last-name-confirmation; tasks cascade.
+    │       │                  #   (bounceTask removed — bounce is localStorage until 0012 lands)
+    │       ├── components/
+    │       │   └── Top5WithBounce.tsx # Client: Top-5 list w/ per-browser bounce/snooze
     │       ├── TaskActions.tsx # Client: inline status / priority / link / due-date editor
     │       ├── patients/
     │       │   ├── page.tsx                # Patient list (RLS filters visibility)
@@ -214,8 +278,10 @@ Read this section to know what file does what.
     │           └── AdminUserRow.tsx        # Client: per-user editor (incl. ATP supervisor)
     └── lib/
         ├── auth-providers.ts  # Config-driven enabled providers (Azure primary)
-        ├── constants.ts       # NEW: DEFAULT_DUE_DAYS = 14
-        ├── db-types.ts        # HAND-WRITTEN row types (AppUser now has supervising_atp_id)
+        ├── constants.ts       # DEFAULT_DUE_DAYS = 14
+        ├── bounce-store.ts    # NEW: per-browser bounce/snooze via localStorage (until 0012 lands)
+        ├── db-types.ts        # HAND-WRITTEN row types (supervising_atp_id, snoozed_until,
+        │                      #   link history, AWAITING_SIGNATURE, dynamic payer types)
         ├── format.ts          # STATUS_LABEL, STATUS_CLASS, ROLE_LABEL, isOverdue, formatDate
         ├── queries.ts         # fetchDashboardTasks, fetchPatientWithTasks, computeNextStep
         ├── server-helpers.ts  # requireUser, hasRole, isAdmin
@@ -246,9 +312,11 @@ The repo has no secrets in it. To run locally OR to drive the AWS migration, you
 
 ---
 
-## Plan for the AWS migration (the next major piece of work)
+## AWS migration (COMPLETED — kept as historical reference)
 
-This is what's next on the punchlist. Approach is single-EC2 with Docker Compose — simplest deployment that meets the goals. Can be upgraded to RDS + ECS Fargate later if scale demands. Addison's partner is actively working on this — sync with him before starting fresh.
+> **This is done.** The plan below was executed; production is live (see the "Production deployment" section near the top, and `infra/aws/DEPLOYMENT.md` for the as-built ops runbook). It's retained so you understand how the stack was built and can reproduce/rebuild it. The one part still outstanding is the **HIPAA-relevant hardening** in step 8 — that must finish before real PHI lands.
+
+Approach was single-EC2 with Docker Compose — simplest deployment that meets the goals. Can be upgraded to RDS + ECS Fargate later if scale demands.
 
 ### Architecture
 
@@ -369,9 +437,10 @@ You can keep both running in parallel for as long as you want during the validat
 3. Done — `src/app/login/LoginForm.tsx` already renders any enabled provider
 
 ### Add a payer type (e.g. "PRIVATE_PAY")
-1. Migration to alter the CHECK constraint on `payers.type` and `task_templates.payer_type`
-2. Add the new value to `PayerType` type in `src/lib/db-types.ts`
-3. Seed new templates for the new payer type
+As of migration `0009`, payer/patient types are a **dynamic, admin-managed registry** (`payer_types` table + FK) — NOT hard-coded CHECK constraints anymore.
+1. Add the type via the **admin UI** (preferred), or insert a row into `payer_types`. Built-in types (Insurance/Medicaid/Medicare) are protected from deletion.
+2. Seed task templates for the new type so new patients of that type get a checklist.
+3. No `db-types.ts` change is needed just to add a *value* (it's data, not a union) — only if you change the type's shape.
 
 ### Assign a new rep their ATP supervisor
 1. Go to /admin as DeAnne (or any BOSS/MANAGER).
@@ -441,7 +510,8 @@ That's where you start.
 2. Read `ARCHITECTURE.md` (system overview with diagram).
 3. Confirm `~/.claude/skills/gstack/bin` exists. If it doesn't, install gstack before you do anything else (see Credentials §5 above) — the PreToolUse hook will block Skill calls otherwise.
 4. Have Addison send `.env.local` securely. Run `npm install` + `npm run dev`. Confirm the app boots and you can sign in as Tara at `localhost:3000`. Create a new patient as Tara and verify that the ATP dropdown auto-fills to Steve and the resulting tasks all have a due date 14 days out.
-5. Coordinate with Addison's partner on the AWS migration plan above so you don't duplicate his EC2 work.
-6. When you make changes, follow the existing patterns — see CLAUDE.md §12 "Common tasks & how to do them" and the recipes in this file.
+5. Work on `main` (the live/deploy branch). Pushing to `main` triggers an Amplify rebuild of the UI. **Schema changes need a migration applied on EC2 by hand** — see `infra/aws/DEPLOYMENT.md`. Don't branch from `build/v1-tracker` (stale).
+6. Two known follow-ups are queued: apply migration `0012` on EC2 (then move bounce off `localStorage`), and the HIPAA hardening checklist before real PHI. See "Where we are right now → In progress / next".
+7. When you make changes, follow the existing patterns — see CLAUDE.md §12 "Common tasks & how to do them" and the recipes in this file. CLAUDE.md, this handoff, and `ARCHITECTURE.md` were all reconciled to the live state on 2026-06-08; if you find a fresh discrepancy, trust the running code + `infra/aws/DEPLOYMENT.md`.
 
 Welcome. Have fun.

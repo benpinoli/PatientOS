@@ -419,3 +419,21 @@ export function computeNextStep(tasks: Task[]) {
     .sort((a, b) => a.order_index - b.order_index);
   return required[0] ?? null;
 }
+
+/**
+ * Unread in-app notification count for the current user. RLS scopes the
+ * rows to the recipient. Returns 0 if the table isn't migrated yet, so the
+ * header bell degrades gracefully before 0014 is applied.
+ */
+export async function fetchUnreadNotificationCount(supabase: SB): Promise<number> {
+  try {
+    const { count, error } = await supabase
+      .from("notifications")
+      .select("id", { count: "exact", head: true })
+      .is("read_at", null);
+    if (error) throw error;
+    return count ?? 0;
+  } catch {
+    return 0;
+  }
+}

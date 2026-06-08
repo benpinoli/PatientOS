@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { requireUser, isAdmin } from "@/lib/server-helpers";
+import { fetchUnreadNotificationCount } from "@/lib/queries";
+import { NotificationBell } from "./NotificationBell";
 
 export const dynamic = "force-dynamic";
 
@@ -10,9 +12,10 @@ const NAV = [
 ] as const;
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const { profile } = await requireUser();
+  const { profile, supabase } = await requireUser();
   const admin = isAdmin(profile);
   const navItems = admin ? [...NAV, { href: "/admin", label: "Admin" }] : NAV;
+  const unreadNotifications = await fetchUnreadNotificationCount(supabase);
 
   return (
     <div className="min-h-screen bg-zinc-50">
@@ -23,14 +26,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               <Link href="/" className="text-base font-semibold text-zinc-900">
                 Choice Tracker
               </Link>
-              <form action="/auth/signout" method="POST" className="sm:hidden">
-                <button
-                  type="submit"
-                  className="min-h-10 rounded-lg border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700"
-                >
-                  Sign out
-                </button>
-              </form>
+              <div className="flex items-center gap-2 sm:hidden">
+                <NotificationBell initialCount={unreadNotifications} />
+                <form action="/auth/signout" method="POST">
+                  <button
+                    type="submit"
+                    className="min-h-10 rounded-lg border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700"
+                  >
+                    Sign out
+                  </button>
+                </form>
+              </div>
             </div>
             <nav
               className="-mx-1 flex gap-1 overflow-x-auto pb-1 text-sm sm:mx-0 sm:flex-wrap sm:overflow-visible sm:pb-0"
@@ -47,6 +53,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               ))}
             </nav>
             <div className="hidden items-center gap-3 text-sm sm:flex">
+              <NotificationBell initialCount={unreadNotifications} />
               <span className="max-w-[14rem] truncate text-zinc-500" title={profile.email ?? ""}>
                 {profile.full_name ?? profile.email}{" "}
                 <span className="text-zinc-400">

@@ -1,4 +1,22 @@
 {
+  "permissions": {
+    "ask": [
+      "Bash(git push:*)",
+      "Bash(ssh:*)",
+      "Bash(scp:*)",
+      "Bash(./infra/aws/scripts/:*)",
+      "Bash(bash infra/aws/scripts/:*)",
+      "Bash(sh infra/aws/scripts/:*)"
+    ],
+    "allow": [
+      "Bash",
+      "Edit",
+      "Write",
+      "Read",
+      "Glob",
+      "Grep"
+    ]
+  },
   "hooks": {
     "PreToolUse": [
       {
