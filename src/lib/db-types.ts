@@ -90,6 +90,30 @@ export type Task = {
   created_at: string;
 };
 
+/** Append-only per-task note. Visible to anyone who can see the task. Never edited/deleted. */
+export type TaskNote = {
+  id: string;
+  task_id: string;
+  body: string;
+  author_id: string | null;
+  created_at: string;
+};
+
+export type NotificationType = "TASK_SUBMITTED_FOR_REVIEW" | "TASK_APPROVED";
+
+/** In-app notification. Stores IDs only; patient name is joined at render time under RLS. */
+export type Notification = {
+  id: string;
+  recipient_id: string;
+  actor_id: string | null;
+  task_id: string | null;
+  patient_id: string;
+  type: NotificationType;
+  task_label: string | null;
+  read_at: string | null;
+  created_at: string;
+};
+
 // Minimal `Database` shape so the supabase-js generics know our tables.
 export type Database = {
   public: {
@@ -100,6 +124,8 @@ export type Database = {
       task_templates: { Row: TaskTemplate; Insert: Partial<TaskTemplate>; Update: Partial<TaskTemplate> };
       tasks:     { Row: Task; Insert: Partial<Task>; Update: Partial<Task> };
       payer_types: { Row: PayerTypeRecord; Insert: Partial<PayerTypeRecord> & { code: string }; Update: Partial<PayerTypeRecord> };
+      task_notes: { Row: TaskNote; Insert: Partial<TaskNote> & { task_id: string; body: string }; Update: Partial<TaskNote> };
+      notifications: { Row: Notification; Insert: Partial<Notification> & { recipient_id: string; patient_id: string; type: NotificationType }; Update: Partial<Notification> };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;

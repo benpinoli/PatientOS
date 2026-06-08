@@ -9,7 +9,14 @@ import {
   isBuiltInPayerType,
   normalizePayerTypeCode,
 } from "@/lib/payer-types";
-import type { AppUser, PayerType, ResponsibleRole, TaskStatus } from "@/lib/db-types";
+import type {
+  AppUser,
+  Database,
+  NotificationType,
+  PayerType,
+  ResponsibleRole,
+  TaskStatus,
+} from "@/lib/db-types";
 import { dueDateAfterBusinessDays, toISODateString } from "@/lib/business-days";
 import { DEFAULT_DUE_DAYS } from "@/lib/constants";
 import { normalizeExternalUrl } from "@/lib/urls";
@@ -89,7 +96,7 @@ async function loadTaskContext(supabase: Awaited<ReturnType<typeof getSupabaseSe
 
   const { data: task, error: taskErr } = await supabase
     .from("tasks")
-    .select("id, patient_id, status, requires_atp_review, responsible_role, link")
+    .select("id, patient_id, status, requires_atp_review, responsible_role, link, label")
     .eq("id", taskId)
     .maybeSingle();
   if (taskErr || !task) throw new Error("Task not found.");
@@ -146,6 +153,44 @@ async function recordLinkEvent(
     posted_by: userId,
   });
   if (histErr) throw new Error(histErr.message);
+}
+
+/**
+ * Insert an in-app notification for the rep<->ATP handoff. Best-effort: a
+ * failure here (e.g. migration 0014 not yet applied) must never block the
+ * task mutation that triggered it. No-ops when there is no recipient or when
+ * the recipient is the actor (solo rep==ATP case — no self-notifications).
+ *
+ * Uses the service-role client because the recipient differs from the actor;
+ * the originating mutation has already been authorized by the time we get here.
+ */
+async function notifyTaskEvent(opts: {
+  recipientId: string | null | undefined;
+  actorId: string;
+  taskId: string;
+  patientId: string;
+  type: NotificationType;
+  taskLabel: string | null;
+}) {
+  const { recipientId, actorId, taskId, patientId, type, taskLabel } = opts;
+  if (!recipientId || recipientId === actorId) return;
+  try {
+    const admin = getSupabaseAdmin();
+    // Payload is checked against the real Insert type; the boundary cast works
+    // around the hand-written Database types collapsing insert inference to
+    // `never` (see CLAUDE.md §13).
+    const row: Database["public"]["Tables"]["notifications"]["Insert"] = {
+      recipient_id: recipientId,
+      actor_id: actorId,
+      task_id: taskId,
+      patient_id: patientId,
+      type,
+      task_label: taskLabel,
+    };
+    await admin.from("notifications").insert(row as never);
+  } catch {
+    // Swallow — notifications are non-critical and must not break the workflow.
+  }
 }
 
 /** Save document link; first link on a step starts it (NOT_STARTED → IN_PROGRESS). */
@@ -237,6 +282,19 @@ export async function submitMarkDone(
     normalized ?? "",
     opts.sentOtherMeans,
   );
+
+  // Submitted for ATP review → notify the assigned ATP.
+  if (nextStatus === "DONE_PENDING_REVIEW") {
+    await notifyTaskEvent({
+      recipientId: patient.assigned_atp_id,
+      actorId: userId,
+      taskId,
+      patientId: task.patient_id,
+      type: "TASK_SUBMITTED_FOR_REVIEW",
+      taskLabel: task.label,
+    });
+  }
+
   revalidatePath("/", "layout");
 }
 
@@ -300,6 +358,17 @@ export async function completeTaskApproval(
     normalized ?? "",
     opts.sentOtherMeans,
   );
+
+  // Approved the rep's submission → notify the assigned rep.
+  await notifyTaskEvent({
+    recipientId: patient.assigned_rep_id,
+    actorId: userId,
+    taskId,
+    patientId: task.patient_id,
+    type: "TASK_APPROVED",
+    taskLabel: task.label,
+  });
+
   revalidatePath("/", "layout");
 }
 
@@ -366,6 +435,161 @@ export async function deletePatient(
 
   revalidatePath("/", "layout");
   redirect("/patients");
+}
+
+// =====================================================================
+// Task notes (append-only; visible to anyone who can see the task)
+// =====================================================================
+
+export type TaskNote = {
+  id: string;
+  task_id: string;
+  body: string;
+  author_id: string | null;
+  author_name: string | null;
+  created_at: string;
+};
+
+function isMissingRelation(message: string, relation: string) {
+  const m = message.toLowerCase();
+  return (
+    m.includes(relation) &&
+    (m.includes("does not exist") || m.includes("could not find") || m.includes("schema cache"))
+  );
+}
+
+/** Add a note to a task. RLS insert policy enforces who may write. */
+export async function addTaskNote(taskId: string, body: string) {
+  const trimmed = (body ?? "").trim();
+  if (!trimmed) throw new Error("Write a note before saving.");
+
+  const supabase = await getSupabaseServer();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("You must be signed in.");
+
+  const { error } = await supabase.from("task_notes").insert({
+    task_id: taskId,
+    body: trimmed,
+    author_id: user.id,
+  });
+  if (error) {
+    if (isMissingRelation(error.message, "task_notes")) {
+      throw new Error(
+        "Notes aren’t enabled on the database yet. Run migration 0013_task_notes.sql on the server, then try again.",
+      );
+    }
+    throw new Error(error.message);
+  }
+  revalidatePath("/", "layout");
+}
+
+/** Notes for a task, newest first. Returns [] if the table isn't migrated yet. */
+export async function fetchTaskNotes(taskId: string): Promise<TaskNote[]> {
+  const supabase = await getSupabaseServer();
+  const { data, error } = await supabase
+    .from("task_notes")
+    .select("id, task_id, body, author_id, created_at, author:app_users!author_id(full_name)")
+    .eq("task_id", taskId)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    if (isMissingRelation(error.message, "task_notes")) return [];
+    throw new Error(error.message);
+  }
+
+  type Row = Omit<TaskNote, "author_name"> & {
+    author: { full_name: string | null } | null;
+  };
+  return ((data ?? []) as unknown as Row[]).map((r) => ({
+    id: r.id,
+    task_id: r.task_id,
+    body: r.body,
+    author_id: r.author_id,
+    author_name: r.author?.full_name ?? null,
+    created_at: r.created_at,
+  }));
+}
+
+// =====================================================================
+// Notifications (rep <-> ATP handoff; see notifyTaskEvent above)
+// =====================================================================
+
+export type NotificationItem = {
+  id: string;
+  type: NotificationType;
+  task_label: string | null;
+  patient_id: string;
+  patient_name: string | null;
+  actor_name: string | null;
+  read_at: string | null;
+  created_at: string;
+};
+
+/** Recent notifications for the current user, newest first. RLS scopes to recipient. */
+export async function fetchNotifications(): Promise<NotificationItem[]> {
+  const supabase = await getSupabaseServer();
+  const { data, error } = await supabase
+    .from("notifications")
+    .select(
+      "id, type, task_label, patient_id, read_at, created_at, patient:patients(first_name, last_name), actor:app_users!actor_id(full_name)",
+    )
+    .order("created_at", { ascending: false })
+    .limit(30);
+
+  if (error) {
+    if (isMissingRelation(error.message, "notifications")) return [];
+    throw new Error(error.message);
+  }
+
+  type Row = {
+    id: string;
+    type: NotificationType;
+    task_label: string | null;
+    patient_id: string;
+    read_at: string | null;
+    created_at: string;
+    patient: { first_name: string; last_name: string } | null;
+    actor: { full_name: string | null } | null;
+  };
+  return ((data ?? []) as unknown as Row[]).map((r) => ({
+    id: r.id,
+    type: r.type,
+    task_label: r.task_label,
+    patient_id: r.patient_id,
+    patient_name: r.patient ? `${r.patient.last_name}, ${r.patient.first_name}` : null,
+    actor_name: r.actor?.full_name ?? null,
+    read_at: r.read_at,
+    created_at: r.created_at,
+  }));
+}
+
+/** Mark every unread notification for the current user as read. */
+export async function markNotificationsRead() {
+  const supabase = await getSupabaseServer();
+  const { error } = await supabase
+    .from("notifications")
+    .update({ read_at: new Date().toISOString() })
+    .is("read_at", null);
+  if (error && !isMissingRelation(error.message, "notifications")) {
+    throw new Error(error.message);
+  }
+  revalidatePath("/", "layout");
+}
+
+/** Mark a single notification read (used on click-through). */
+export async function markNotificationRead(id: string) {
+  const supabase = await getSupabaseServer();
+  const { error } = await supabase
+    .from("notifications")
+    .update({ read_at: new Date().toISOString() })
+    .eq("id", id)
+    .is("read_at", null);
+  if (error && !isMissingRelation(error.message, "notifications")) {
+    throw new Error(error.message);
+  }
+  revalidatePath("/", "layout");
 }
 
 // =====================================================================

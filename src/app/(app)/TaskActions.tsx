@@ -19,7 +19,10 @@ import {
   submitMarkDone,
   submitMarkDoneSigned,
   fetchTaskLinkHistory,
+  fetchTaskNotes,
+  addTaskNote,
   type TaskLinkEvent,
+  type TaskNote,
 } from "./actions";
 import {
   bounce as bounceLocally,
@@ -127,6 +130,8 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
   const [pending, start] = useTransition();
   const [showHistory, setShowHistory] = useState(false);
   const [history, setHistory] = useState<TaskLinkEvent[] | null>(null);
+  const [showNotes, setShowNotes] = useState(false);
+  const [notes, setNotes] = useState<TaskNote[] | null>(null);
   const [linkDraft, setLinkDraft] = useState(task.link ?? "");
   const [sentOtherMeans, setSentOtherMeans] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -163,6 +168,36 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [showHistory]);
+
+  useEffect(() => {
+    if (!showNotes) return;
+    start(async () => {
+      const rows = await fetchTaskNotes(task.id);
+      setNotes(rows);
+    });
+  }, [showNotes, task.id]);
+
+  useEffect(() => {
+    if (!showNotes) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShowNotes(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [showNotes]);
+
+  const onAddNote = (body: string, onDone: () => void) =>
+    start(async () => {
+      setError(null);
+      try {
+        await addTaskNote(task.id, body);
+        const rows = await fetchTaskNotes(task.id);
+        setNotes(rows);
+        onDone();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Could not save note");
+      }
+    });
 
   const afterMutation = () => router.refresh();
 
@@ -275,6 +310,13 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
           ))}
         <ActionButton
           disabled={pending}
+          label="Notes"
+          tone="secondary"
+          fullWidth={isCard}
+          onClick={() => setShowNotes((s) => !s)}
+        />
+        <ActionButton
+          disabled={pending}
           label="Link history"
           tone="secondary"
           fullWidth={isCard}
@@ -332,6 +374,24 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
           pending={pending}
           onSubmit={onApprove}
         />
+      )}
+
+      {showNotes && (
+        <>
+          <button
+            type="button"
+            aria-label="Close notes"
+            className="fixed inset-0 z-40 bg-black/30 lg:hidden"
+            onClick={() => setShowNotes(false)}
+          />
+          <NotesMenu
+            notes={notes}
+            pending={pending}
+            isCard={isCard}
+            onClose={() => setShowNotes(false)}
+            onAddNote={onAddNote}
+          />
+        </>
       )}
 
       {showHistory && (
@@ -493,6 +553,82 @@ function LinkHistoryMenu({
         >
           Clear manual priority ({task.priority})
         </button>
+      )}
+    </div>
+  );
+}
+
+function NotesMenu({
+  notes,
+  pending,
+  isCard,
+  onClose,
+  onAddNote,
+}: {
+  notes: TaskNote[] | null;
+  pending: boolean;
+  isCard: boolean;
+  onClose: () => void;
+  onAddNote: (body: string, onDone: () => void) => void;
+}) {
+  const [draft, setDraft] = useState("");
+  const canSave = draft.trim().length > 0 && !pending;
+
+  return (
+    <div
+      className={
+        "z-50 rounded-lg border border-zinc-200 bg-white p-4 shadow-xl " +
+        (isCard
+          ? "fixed inset-x-3 bottom-3 max-h-[min(70vh,32rem)] overflow-y-auto"
+          : "absolute right-0 top-full mt-2 w-80 max-h-96 overflow-y-auto")
+      }
+      role="dialog"
+      aria-label="Notes"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm font-semibold text-zinc-900">Notes</span>
+        <button
+          type="button"
+          onClick={onClose}
+          className="min-h-10 rounded-lg border border-zinc-200 px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+        >
+          Close
+        </button>
+      </div>
+
+      <div className="mt-3 space-y-2">
+        <textarea
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          rows={3}
+          placeholder="Add a note (e.g. why this task isn’t done yet)…"
+          className="w-full resize-y rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm"
+        />
+        <button
+          type="button"
+          disabled={!canSave}
+          onClick={() => onAddNote(draft, () => setDraft(""))}
+          className="inline-flex min-h-10 w-full items-center justify-center rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:opacity-50"
+        >
+          Add note
+        </button>
+      </div>
+
+      {notes === null ? (
+        <p className="mt-4 text-sm text-zinc-500">Loading…</p>
+      ) : notes.length === 0 ? (
+        <p className="mt-4 text-sm text-zinc-500">No notes yet.</p>
+      ) : (
+        <ul className="mt-4 space-y-3">
+          {notes.map((n) => (
+            <li key={n.id} className="rounded-md border border-zinc-100 bg-zinc-50 p-3 text-sm">
+              <p className="whitespace-pre-wrap break-words text-zinc-800">{n.body}</p>
+              <div className="mt-1 text-xs text-zinc-500">
+                {n.author_name ?? "Unknown"} · {new Date(n.created_at).toLocaleString()}
+              </div>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );
