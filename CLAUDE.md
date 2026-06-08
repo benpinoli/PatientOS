@@ -57,9 +57,9 @@ UUIDs are deterministic in `supabase/seed.sql` (`00000000-0000-0000-0000-0000000
 - **React 19.2.4**.
 - **TypeScript 5**.
 - **Tailwind CSS 4** via `@tailwindcss/postcss`.
-- **Supabase**: Postgres 17 + GoTrue Auth + PostgREST + Kong + Row-Level Security. Local dev can run the Supabase CLI stack; the production target is self-hosted Supabase on AWS EC2.
+- **Supabase**: Postgres 17 + GoTrue Auth + PostgREST + Kong + Row-Level Security. Local dev can run the Supabase CLI stack; **production is self-hosted Supabase on AWS EC2 — already deployed** (see §16 and `infra/aws/DEPLOYMENT.md`).
 - **`@supabase/ssr`** for cookie-based auth on Next App Router — server client in `src/lib/supabase/server.ts`, browser client in `src/lib/supabase/browser.ts`, cookie refresh in `src/proxy.ts`.
-- Intended deployment: **AWS Amplify** for the Next.js app, pointed at self-hosted Supabase on AWS. Microsoft (Azure AD / Entra) OAuth is the default auth provider; other providers are config-driven (see `src/lib/auth-providers.ts`).
+- Deployment (**live**): **AWS Amplify** for the Next.js app (auto-builds from branch `main`), pointed at self-hosted Supabase on AWS EC2 in us-west-2. Microsoft (Azure AD / Entra) OAuth is the default auth provider; other providers are config-driven (see `src/lib/auth-providers.ts`). Active branch is `main`; `build/v1-tracker` is stale.
 
 ---
 
@@ -79,7 +79,16 @@ UUIDs are deterministic in `supabase/seed.sql` (`00000000-0000-0000-0000-0000000
 │       ├── 0002_rls.sql        # current_user_roles, has_any_role, reports_to_me + policies
 │       ├── 0003_approve_gate.sql # enforce_task_approval_gate trigger
 │       ├── 0004_supervising_atp.sql # app_users.supervising_atp_id
-│       └── 0005_harden_user_and_patient_workflows.sql # user RPCs + atomic create patient
+│       ├── 0005_harden_user_and_patient_workflows.sql # user RPCs + atomic create patient
+│       ├── 0006_fix_create_patient_payer_type.sql # fix ambiguous payer_type in RPC
+│       ├── 0007_task_link_history.sql # per-task link submission history
+│       ├── 0008_requires_atp_review_default_true.sql # ATP review default → true
+│       ├── 0009_payer_types_admin.sql # dynamic admin-managed payer types (replaces CHECK)
+│       ├── 0010_ensure_builtin_payer_types.sql # idempotent built-in type re-seed
+│       ├── 0011_task_awaiting_signature_status.sql # AWAITING_SIGNATURE status
+│       ├── 0012_task_snoozed_until.sql # tasks.snoozed_until (NOT applied to prod yet — bounce uses localStorage)
+│       ├── 0013_task_notes.sql # append-only per-task notes (mirrors task_link_events)
+│       └── 0014_notifications.sql # in-app rep<->ATP notifications (bell)
 └── src/
     ├── proxy.ts                # Refresh Supabase cookie on every req + redirect unauth users to /login (Next 16 proxy convention)
     ├── app/
@@ -140,7 +149,7 @@ All tables live in `public`. See `supabase/migrations/0001_init.sql` for the sou
 |---|---|---|
 | `id` | `uuid` PK | |
 | `name` | `text` NOT NULL | e.g. "Nevada Medicaid", "Anthem BCBS" |
-| `type` | `text` NOT NULL | check in (`MEDICARE`, `MEDICAID`, `COMMERCIAL`) |
+| `type` | `text` NOT NULL | FK → `payer_types.key` (as of `0009`; was a CHECK in `MEDICARE`/`MEDICAID`/`COMMERCIAL`). Built-ins protected; admin-managed. |
 
 ### `patients` — patient + active pursuit merged
 | Column | Type | Meaning |
@@ -160,7 +169,7 @@ All tables live in `public`. See `supabase/migrations/0001_init.sql` for the sou
 | Column | Type | Meaning |
 |---|---|---|
 | `id` | `uuid` PK | |
-| `payer_type` | `text` NOT NULL | check in (`MEDICARE`, `MEDICAID`, `COMMERCIAL`) |
+| `payer_type` | `text` NOT NULL | FK → `payer_types.key` (as of `0009`; was a CHECK in `MEDICARE`/`MEDICAID`/`COMMERCIAL`). |
 | `label` | `text` NOT NULL | Task title; copied to each instantiated `tasks.label` |
 | `responsible_role` | `text` NOT NULL | check in (`DOCTOR`, `PT`, `ATP`, `REP`, `FRONT_DESK`) |
 | `requires_atp_review` | `boolean` DEFAULT `false` | If true, only the ATP/BOSS/solo-case can move to APPROVED |
@@ -178,7 +187,8 @@ All tables live in `public`. See `supabase/migrations/0001_init.sql` for the sou
 | `requires_atp_review` | `boolean` DEFAULT `false` | **Snapshot** |
 | `required` | `boolean` DEFAULT `true` | **Snapshot** |
 | `order_index` | `int` NOT NULL | **Snapshot** of `default_order` |
-| `status` | `text` DEFAULT `NOT_STARTED` | check in (`NOT_STARTED`, `IN_PROGRESS`, `DONE_PENDING_REVIEW`, `APPROVED`, `BLOCKED`) |
+| `status` | `text` DEFAULT `NOT_STARTED` | check in (`NOT_STARTED`, `IN_PROGRESS`, `DONE_PENDING_REVIEW`, `APPROVED`, `BLOCKED`, `AWAITING_SIGNATURE`) — `AWAITING_SIGNATURE` added in `0011`. `BLOCKED` still valid in DB but no longer surfaced in the UI (replaced by bounce). |
+| `snoozed_until` | `timestamptz` | Added in `0012` for server-backed task bounce/snooze. **NOT yet applied to prod** — UI bounce currently uses per-browser localStorage. |
 | `link` | `text` | Optional URL (e.g. to a Drive doc) — the only "doc" support in v1 |
 | `start_date` | `date` | Optional |
 | `due_date` | `date` | Optional; drives overdue/priority sort |
@@ -190,13 +200,13 @@ All tables live in `public`. See `supabase/migrations/0001_init.sql` for the sou
 
 ### Recap of all CHECK-constraint allowed values
 - `app_users.roles` (elements of array): `ATP`, `REP`, `MANAGER`, `BOSS`
-- `payers.type`: `MEDICARE`, `MEDICAID`, `COMMERCIAL`
 - `patients.status`: `ACTIVE`, `SUBMITTED`, `APPROVED`, `DENIED`, `DELIVERED`, `CLOSED`
-- `task_templates.payer_type` + `tasks.payer_type` (implicit): `MEDICARE`, `MEDICAID`, `COMMERCIAL`
 - `task_templates.responsible_role` + `tasks.responsible_role`: `DOCTOR`, `PT`, `ATP`, `REP`, `FRONT_DESK`
-- `tasks.status`: `NOT_STARTED`, `IN_PROGRESS`, `DONE_PENDING_REVIEW`, `APPROVED`, `BLOCKED`
+- `tasks.status`: `NOT_STARTED`, `IN_PROGRESS`, `DONE_PENDING_REVIEW`, `APPROVED`, `BLOCKED`, `AWAITING_SIGNATURE`
 
-These are kept as `text` + `check` rather than Postgres `ENUM`s on purpose — adding a new allowed value is one `ALTER TABLE ... DROP/ADD CONSTRAINT` rather than the more painful enum-rename dance.
+**Payer/patient types are no longer a CHECK constraint.** As of `0009_payer_types_admin.sql` they live in a dedicated `payer_types` table referenced by FK, managed through the admin UI (built-in Insurance/Medicaid/Medicare are protected from deletion; `0010` re-seeds them idempotently). To add a type, add a row — don't alter a constraint. The remaining lists above are still `text` + `check`.
+
+The lists above are kept as `text` + `check` rather than Postgres `ENUM`s on purpose — adding a new allowed value is one `ALTER TABLE ... DROP/ADD CONSTRAINT` rather than the more painful enum-rename dance.
 
 ---
 
@@ -342,21 +352,13 @@ Append (or `UPDATE`) rows in `public.task_templates` for the relevant `payer_typ
 
 ### Add a new payer type (e.g. `WORKERS_COMP`)
 
-This touches three CHECK constraints. Write a new migration:
+**This changed in `0009_payer_types_admin.sql`.** Payer/patient types are now rows in the `payer_types` table referenced by FK — NOT a CHECK constraint. To add one:
 
-```sql
-alter table public.payers
-  drop constraint payers_type_check,
-  add constraint payers_type_check
-  check (type in ('MEDICARE','MEDICAID','COMMERCIAL','WORKERS_COMP'));
+1. Add the type via the **admin UI** (preferred), or `insert into public.payer_types (...)`. Built-in Insurance/Medicaid/Medicare are protected from deletion.
+2. Add `task_templates` rows for the new type so new patients of that type get a checklist.
+3. No `db-types.ts` change is needed to add a *value* (types are data, not a TS union anymore).
 
-alter table public.task_templates
-  drop constraint task_templates_payer_type_check,
-  add constraint task_templates_payer_type_check
-  check (payer_type in ('MEDICARE','MEDICAID','COMMERCIAL','WORKERS_COMP'));
-```
-
-Then update `PayerType` in `src/lib/db-types.ts` and (if instantiation code references it) the seed of templates for the new type.
+> Historical note: before `0009`, this required dropping + re-adding CHECK constraints on `payers.type` and `task_templates.payer_type` and editing a `PayerType` union. That's no longer how it works.
 
 ### Enable Google OAuth
 
@@ -425,16 +427,18 @@ Explicit non-goals, all to keep v1 cheap, fast to ship, and free of HIPAA-tier i
 
 ## 16. Going to production
 
-When v1 graduates from "synthetic demo" to "real patients", use the AWS path:
+**The AWS infrastructure is already deployed** (self-hosted Supabase on EC2 `44.253.198.43` / instance `i-0c55b5678f0ec6cf7` in us-west-2, Next.js on Amplify `d2na0dxbmaa2o4` → `https://main.d2na0dxbmaa2o4.amplifyapp.com`). The as-built ops runbook is `infra/aws/DEPLOYMENT.md`; `ARCHITECTURE.md` §3 has the non-technical AWS console guide. Amplify auto-builds from branch `main`; **schema changes require applying the migration on EC2 by hand** (push does not migrate the DB).
 
-1. **Self-host Supabase on AWS EC2** in `us-west-2` with encrypted EBS, restricted security groups, and no public Postgres port.
-2. **Deploy Next.js to AWS Amplify** with env vars pointed at the self-hosted Supabase URL and keys.
-3. **Repeat the same migrations** against the self-hosted Postgres. Do not load demo patients or password users in production.
-4. **Configure Microsoft/Azure OAuth** in GoTrue and disable dev email/password before real users enter PHI.
-5. **Complete HIPAA-relevant hardening before real data**: AWS BAA, encrypted backups, audit logging, CloudTrail, OS patching, access-key rotation, and breach-response documentation.
+Status of the production checklist:
+
+1. ✅ **Self-hosted Supabase on AWS EC2** in `us-west-2`, encrypted EBS, restricted security groups, no public Postgres port.
+2. ✅ **Next.js on AWS Amplify**, env vars pointed at the self-hosted Supabase URL + keys.
+3. ✅ **Migrations applied** to the self-hosted Postgres — **except `0012`** (`snoozed_until`), which is not yet applied (bounce runs on localStorage until it is). No demo patients/password users in prod.
+4. ⏳ **Configure Microsoft/Azure OAuth** in GoTrue and disable dev email/password before real users enter PHI.
+5. ⏳ **HIPAA-relevant hardening before real data** — still outstanding: AWS BAA, encrypted backups (S3), audit logging (pg_audit), CloudTrail, OS patching, access-key rotation, breach-response doc.
 6. **Same applies to any future provider**: if storage, notifications, or documents are added, that provider also needs the right BAA and controls.
 
-Until the AWS controls are in place, this project sees synthetic data only.
+**Until the HIPAA hardening (4–5) is complete, this project sees synthetic data only** — the EC2 box existing does not make it PHI-ready yet.
 
 ## gstack (REQUIRED — global install)
 
