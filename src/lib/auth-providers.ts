@@ -26,7 +26,10 @@ export const authProviders: AuthProviderConfig[] = [
   {
     provider: "azure",
     label: "Sign in with Microsoft (Outlook)",
-    enabled: envFlag("NEXT_PUBLIC_AUTH_AZURE_ENABLED", false),
+    // Forced off and hidden for now — we only want plain email/password sign-in.
+    // Config is kept so it can be re-enabled later (swap back to
+    // envFlag("NEXT_PUBLIC_AUTH_AZURE_ENABLED", false)) once Entra is wired up.
+    enabled: false,
     primary: true,
   },
   {
