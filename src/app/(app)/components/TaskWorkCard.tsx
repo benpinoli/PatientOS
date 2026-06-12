@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useState } from "react";
 import type { AppUser, Task } from "@/lib/db-types";
 import type { PatientAssignment } from "@/lib/task-permissions";
 import {
@@ -29,6 +32,8 @@ export type TaskWorkCardProps = {
   };
   orderIndex?: number;
   latestNote?: LatestNoteSummary | null;
+  /** Patient detail: inline expansion instead of popovers. */
+  patientDetail?: boolean;
 };
 
 export function TaskWorkCard({
@@ -40,7 +45,9 @@ export function TaskWorkCard({
   patientInfo,
   orderIndex,
   latestNote,
+  patientDetail,
 }: TaskWorkCardProps) {
+  const [embeddedPanel, setEmbeddedPanel] = useState<"notes" | "history" | null>(null);
   const overdue = isOverdue(task.due_date);
 
   return (
@@ -119,7 +126,14 @@ export function TaskWorkCard({
       </dl>
 
       <div className="mt-4 border-t border-zinc-100 pt-4">
-        <TaskActions task={task} profile={profile} patient={patient} layout="card" />
+        <TaskActions
+          task={task}
+          profile={profile}
+          patient={patient}
+          layout={patientDetail ? "patient-card" : "card"}
+          embeddedPanel={patientDetail ? embeddedPanel : undefined}
+          onEmbeddedPanelChange={patientDetail ? setEmbeddedPanel : undefined}
+        />
       </div>
     </article>
   );

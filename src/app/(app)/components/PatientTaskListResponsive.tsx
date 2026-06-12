@@ -35,6 +35,7 @@ export function PatientTaskListResponsive({
             orderIndex={t.order_index}
             highlight={nextStepId === t.id}
             latestNote={t.latest_note}
+            patientDetail
           />
         ))}
       </div>

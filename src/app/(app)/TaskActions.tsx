@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import type { LatestNoteSummary } from "@/lib/queries";
 import type { AppUser, Task } from "@/lib/db-types";
@@ -38,7 +39,12 @@ type TaskActionsProps = {
   task: Task;
   profile: AppUser;
   patient: PatientAssignment;
-  layout?: "card" | "table";
+  layout?: "card" | "table" | "patient-table" | "patient-card";
+  /** Patient layouts: panel rendered in an expanded row/card section by the parent. */
+  embeddedPanel?: "notes" | "history" | null;
+  onEmbeddedPanelChange?: (panel: "notes" | "history" | null) => void;
+  /** When set, workflow + embedded panels render into this container (patient table row). */
+  expansionContainer?: HTMLElement | null;
 };
 
 function DocumentLinkPanel({
@@ -56,6 +62,7 @@ function DocumentLinkPanel({
   onSubmit,
   linkOptional = false,
   compact = false,
+  horizontal = false,
 }: {
   title: string;
   description: string;
@@ -71,6 +78,7 @@ function DocumentLinkPanel({
   onSubmit: () => void;
   linkOptional?: boolean;
   compact?: boolean;
+  horizontal?: boolean;
 }) {
   const ready = linkOptional || sentOtherMeans || linkDraft.trim().length > 0;
   const border =
@@ -78,6 +86,54 @@ function DocumentLinkPanel({
       ? "border-emerald-200 bg-emerald-50/50"
       : "border-amber-200 bg-amber-50/50";
   const titleColor = submitTone === "green" ? "text-emerald-900" : "text-amber-900";
+
+  if (horizontal) {
+    return (
+      <div className={"w-full rounded-lg border " + border + " p-3"}>
+        <div className="flex flex-wrap items-end gap-x-4 gap-y-2">
+          <p className={"w-full text-xs font-semibold uppercase tracking-wide " + titleColor}>
+            {title}
+          </p>
+          <label className="min-w-[12rem] flex-1 text-xs font-medium text-zinc-700">
+            Document link
+            <input
+              type="url"
+              inputMode="url"
+              autoComplete="url"
+              value={linkDraft}
+              onChange={(e) => {
+                setLinkDraft(e.target.value);
+                if (e.target.value.trim()) setSentOtherMeans(false);
+              }}
+              placeholder="https://"
+              className="mt-1 w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-sm shadow-sm"
+            />
+          </label>
+          {!linkOptional && (
+            <label className="flex min-h-9 shrink-0 items-center gap-2 rounded-md border border-zinc-200 bg-white px-3 text-xs text-zinc-700">
+              <input
+                type="checkbox"
+                className="size-3.5 shrink-0"
+                checked={sentOtherMeans}
+                onChange={(e) => {
+                  setSentOtherMeans(e.target.checked);
+                  if (e.target.checked) setLinkDraft("");
+                }}
+              />
+              {checkboxLabel}
+            </label>
+          )}
+          <ActionButton
+            disabled={pending || !ready || disabled}
+            label={submitLabel}
+            tone={submitTone === "green" ? "primary-green" : "primary-amber"}
+            compact
+            onClick={onSubmit}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -149,7 +205,15 @@ function DocumentLinkPanel({
   );
 }
 
-export function TaskActions({ task, profile, patient, layout = "table" }: TaskActionsProps) {
+export function TaskActions({
+  task,
+  profile,
+  patient,
+  layout = "table",
+  embeddedPanel = null,
+  onEmbeddedPanelChange,
+  expansionContainer,
+}: TaskActionsProps) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [showHistory, setShowHistory] = useState(false);
@@ -160,7 +224,9 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
   const [sentOtherMeans, setSentOtherMeans] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const isCard = layout === "card";
+  const isCard = layout === "card" || layout === "patient-card";
+  const isPatientEmbed = layout === "patient-table" || layout === "patient-card";
+  const isTableCompact = layout === "table";
   const showApprove = canShowApproveButton(profile, patient, task);
   const showMarkDone = canShowMarkDone(profile, patient, task);
   const showMarkDoneSigned = canShowMarkDoneSigned(profile, patient, task);
@@ -177,14 +243,34 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
   }, [task.id]);
 
   useEffect(() => {
+    if (!isPatientEmbed) return;
+    if (embeddedPanel !== "history") return;
+    start(async () => {
+      const rows = await fetchTaskLinkHistory(task.id);
+      setHistory(rows);
+    });
+  }, [embeddedPanel, task.id, isPatientEmbed]);
+
+  useEffect(() => {
+    if (!isPatientEmbed) return;
+    if (embeddedPanel !== "notes") return;
+    start(async () => {
+      const rows = await fetchTaskNotes(task.id);
+      setNotes(rows);
+    });
+  }, [embeddedPanel, task.id, isPatientEmbed]);
+
+  useEffect(() => {
+    if (isPatientEmbed) return;
     if (!showHistory) return;
     start(async () => {
       const rows = await fetchTaskLinkHistory(task.id);
       setHistory(rows);
     });
-  }, [showHistory, task.id]);
+  }, [showHistory, task.id, isPatientEmbed]);
 
   useEffect(() => {
+    if (isPatientEmbed) return;
     if (!showHistory) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setShowHistory(false);
@@ -194,14 +280,16 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
   }, [showHistory]);
 
   useEffect(() => {
+    if (isPatientEmbed) return;
     if (!showNotes) return;
     start(async () => {
       const rows = await fetchTaskNotes(task.id);
       setNotes(rows);
     });
-  }, [showNotes, task.id]);
+  }, [showNotes, task.id, isPatientEmbed]);
 
   useEffect(() => {
+    if (isPatientEmbed) return;
     if (!showNotes) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setShowNotes(false);
@@ -279,6 +367,98 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
       }
     });
 
+  const patientExpansionBody = (
+    <div className={"space-y-3 " + (expansionContainer ? "" : "border-t border-zinc-100 pt-3")}>
+      {showMarkDoneSigned && (
+          <DocumentLinkPanel
+            title="Mark as done (signed)"
+            description="You are the rep and ATP on this case. Sign off when the paperwork is complete. You may add a document link."
+            linkDraft={linkDraft}
+            setLinkDraft={setLinkDraft}
+            sentOtherMeans={false}
+            setSentOtherMeans={() => {}}
+            checkboxLabel=""
+            submitLabel="Mark as done (signed)"
+            submitTone="amber"
+            disabled={false}
+            pending={pending}
+            onSubmit={onMarkDoneSigned}
+            linkOptional
+            horizontal
+          />
+        )}
+        {showMarkDone && (
+          <DocumentLinkPanel
+            title="Mark done"
+            description="Submit this step for ATP review. It stays pending until the assigned ATP approves — it will not show as approved until then."
+            linkDraft={linkDraft}
+            setLinkDraft={setLinkDraft}
+            sentOtherMeans={sentOtherMeans}
+            setSentOtherMeans={setSentOtherMeans}
+            checkboxLabel="Document already sent (no link to paste)"
+            submitLabel="Mark done"
+            submitTone="amber"
+            disabled={false}
+            pending={pending}
+            onSubmit={onMarkDone}
+            horizontal
+          />
+        )}
+        {showApprove && (
+          <DocumentLinkPanel
+            title="ATP Approve (signed)"
+            description="Sign off on this step after the rep’s submission. Record the final document link or confirm it was sent another way."
+            linkDraft={linkDraft}
+            setLinkDraft={setLinkDraft}
+            sentOtherMeans={sentOtherMeans}
+            setSentOtherMeans={setSentOtherMeans}
+            checkboxLabel="Sent via other means (no URL)"
+            submitLabel="ATP Approve (signed)"
+            submitTone="green"
+            disabled={false}
+            pending={pending}
+            onSubmit={onApprove}
+            horizontal
+          />
+        )}
+        {embeddedPanel === "notes" && (
+          <NotesMenu
+            notes={notes}
+            pending={pending}
+            isCard={false}
+            embedded
+            onClose={() => onEmbeddedPanelChange?.(null)}
+            onAddNote={onAddNote}
+          />
+        )}
+        {embeddedPanel === "history" && (
+          <LinkHistoryMenu
+            history={history}
+            pending={pending}
+            task={task}
+            isCard={false}
+            embedded
+            onClose={() => onEmbeddedPanelChange?.(null)}
+            onClearPriority={() => start(() => setTaskPriority(task.id, null))}
+          />
+        )}
+    </div>
+  );
+
+  const hasPatientExpansionContent =
+    showMarkDoneSigned ||
+    showMarkDone ||
+    showApprove ||
+    embeddedPanel === "notes" ||
+    embeddedPanel === "history";
+
+  const patientExpansion =
+    isPatientEmbed &&
+    hasPatientExpansionContent &&
+    (layout === "patient-card" || expansionContainer)
+      ? patientExpansionBody
+      : null;
+
   return (
     <div
       className={
@@ -342,6 +522,10 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
           fullWidth={isCard}
           compact={!isCard}
           onClick={() => {
+            if (isPatientEmbed && onEmbeddedPanelChange) {
+              onEmbeddedPanelChange(embeddedPanel === "notes" ? null : "notes");
+              return;
+            }
             setShowHistory(false);
             setShowNotes((s) => !s);
           }}
@@ -353,13 +537,17 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
           fullWidth={isCard}
           compact={!isCard}
           onClick={() => {
+            if (isPatientEmbed && onEmbeddedPanelChange) {
+              onEmbeddedPanelChange(embeddedPanel === "history" ? null : "history");
+              return;
+            }
             setShowNotes(false);
             setShowHistory((s) => !s);
           }}
         />
       </div>
 
-      {showMarkDoneSigned && (
+      {!isPatientEmbed && showMarkDoneSigned && (
         <DocumentLinkPanel
           title="Mark as done (signed)"
           description="You are the rep and ATP on this case. Sign off when the paperwork is complete. You may add a document link."
@@ -374,11 +562,11 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
           pending={pending}
           onSubmit={onMarkDoneSigned}
           linkOptional
-          compact={!isCard}
+          compact={isTableCompact}
         />
       )}
 
-      {showMarkDone && (
+      {!isPatientEmbed && showMarkDone && (
         <DocumentLinkPanel
           title="Mark done"
           description="Submit this step for ATP review. It stays pending until the assigned ATP approves — it will not show as approved until then."
@@ -392,11 +580,11 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
           disabled={false}
           pending={pending}
           onSubmit={onMarkDone}
-          compact={!isCard}
+          compact={isTableCompact}
         />
       )}
 
-      {showApprove && (
+      {!isPatientEmbed && showApprove && (
         <DocumentLinkPanel
           title="ATP Approve (signed)"
           description="Sign off on this step after the rep’s submission. Record the final document link or confirm it was sent another way."
@@ -410,11 +598,11 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
           disabled={false}
           pending={pending}
           onSubmit={onApprove}
-          compact={!isCard}
+          compact={isTableCompact}
         />
       )}
 
-      {showNotes && (
+      {!isPatientEmbed && showNotes && (
         <>
           <button
             type="button"
@@ -432,7 +620,7 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
         </>
       )}
 
-      {showHistory && (
+      {!isPatientEmbed && showHistory && (
         <>
           <button
             type="button"
@@ -450,6 +638,10 @@ export function TaskActions({ task, profile, patient, layout = "table" }: TaskAc
           />
         </>
       )}
+      {patientExpansion &&
+        (layout === "patient-card"
+          ? patientExpansion
+          : expansionContainer && createPortal(patientExpansion, expansionContainer))}
     </div>
   );
 }
@@ -516,11 +708,22 @@ export function LinkAndNoteCell({
   latestNote?: LatestNoteSummary | null;
   variant?: "table" | "card";
 }) {
+  const href = normalizeExternalUrl(task.link);
+  const noteBody = latestNote?.body?.trim();
+
   if (variant === "card") {
     return (
       <div className="space-y-2">
-        <LatestLinkCell task={task} variant="card" />
-        <LatestNoteCell note={latestNote} variant="card" />
+        {href ? (
+          <LatestLinkCell task={task} variant="card" />
+        ) : (
+          <span className="text-sm text-zinc-400">No link yet</span>
+        )}
+        {noteBody ? (
+          <LatestNoteCell note={latestNote} variant="card" />
+        ) : (
+          <span className="text-sm text-zinc-400">No notes yet</span>
+        )}
       </div>
     );
   }
@@ -528,16 +731,18 @@ export function LinkAndNoteCell({
   return (
     <div className="grid min-w-0 gap-1">
       <div className="min-w-0">
-        <span className="text-[9px] font-medium uppercase tracking-wide text-zinc-400">
-          Link
-        </span>
-        <LatestLinkCell task={task} variant="table" />
+        {href ? (
+          <LatestLinkCell task={task} variant="table" />
+        ) : (
+          <span className="text-xs text-zinc-400">No link yet</span>
+        )}
       </div>
       <div className="min-w-0 border-t border-zinc-100 pt-1">
-        <span className="text-[9px] font-medium uppercase tracking-wide text-zinc-400">
-          Note
-        </span>
-        <LatestNoteCell note={latestNote} variant="table" />
+        {noteBody ? (
+          <LatestNoteCell note={latestNote} variant="table" />
+        ) : (
+          <span className="text-xs text-zinc-400">No notes yet</span>
+        )}
       </div>
     </div>
   );
@@ -584,7 +789,10 @@ function ActionButton({
   );
 }
 
-function popoverClass(isCard: boolean, side: "notes" | "history") {
+function popoverClass(isCard: boolean, side: "notes" | "history", embedded?: boolean) {
+  if (embedded) {
+    return "w-full rounded-lg border border-zinc-200 bg-zinc-50/80 p-3";
+  }
   const base = "z-50 rounded-lg border border-zinc-200 bg-white shadow-xl ";
   if (isCard) {
     return (
@@ -602,6 +810,7 @@ function LinkHistoryMenu({
   pending,
   task,
   isCard,
+  embedded,
   onClose,
   onClearPriority,
 }: {
@@ -609,12 +818,13 @@ function LinkHistoryMenu({
   pending: boolean;
   task: Task;
   isCard: boolean;
+  embedded?: boolean;
   onClose: () => void;
   onClearPriority: () => void;
 }) {
   return (
     <div
-      className={popoverClass(isCard, "history")}
+      className={popoverClass(isCard, "history", embedded)}
       role="dialog"
       aria-label="Link history"
     >
@@ -635,6 +845,31 @@ function LinkHistoryMenu({
         <p className="mt-2 text-xs text-zinc-500">Loading…</p>
       ) : history.length === 0 ? (
         <p className="mt-2 text-xs text-zinc-500">No links recorded yet.</p>
+      ) : embedded ? (
+        <ul className="mt-2 flex flex-wrap gap-2">
+          {history.map((e) => (
+            <li
+              key={e.id}
+              className="max-w-xs rounded-md border border-zinc-200 bg-white p-2 text-xs"
+            >
+              {e.via_other_means ? (
+                <span className="text-zinc-700">Sent / other means</span>
+              ) : (
+                <a
+                  href={normalizeExternalUrl(e.link)!}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="break-all font-medium text-blue-600 hover:underline"
+                >
+                  {e.link}
+                </a>
+              )}
+              <div className="mt-0.5 text-[10px] text-zinc-500">
+                {new Date(e.created_at).toLocaleString()}
+              </div>
+            </li>
+          ))}
+        </ul>
       ) : (
         <ul className={"mt-2 " + (isCard ? "space-y-3" : "space-y-2")}>
           {history.map((e) => (
@@ -682,17 +917,76 @@ function NotesMenu({
   notes,
   pending,
   isCard,
+  embedded,
   onClose,
   onAddNote,
 }: {
   notes: TaskNote[] | null;
   pending: boolean;
   isCard: boolean;
+  embedded?: boolean;
   onClose: () => void;
   onAddNote: (body: string, onDone: () => void) => void;
 }) {
   const [draft, setDraft] = useState("");
   const canSave = draft.trim().length > 0 && !pending;
+
+  if (embedded) {
+    return (
+      <div className={popoverClass(isCard, "notes", true)} role="dialog" aria-label="Notes">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-sm font-semibold text-zinc-900">Notes</span>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md border border-zinc-200 px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+          >
+            Close
+          </button>
+        </div>
+        <div className="mt-3 flex flex-col gap-3 lg:flex-row lg:items-start">
+          <div className="flex shrink-0 flex-col gap-2 lg:w-64">
+            <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              rows={2}
+              placeholder="Add a note…"
+              className="w-full resize-y rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-xs shadow-sm"
+            />
+            <button
+              type="button"
+              disabled={!canSave}
+              onClick={() => onAddNote(draft, () => setDraft(""))}
+              className="inline-flex min-h-8 w-full items-center justify-center rounded-md bg-blue-600 px-3 text-xs font-semibold text-white transition hover:bg-blue-500 disabled:opacity-50"
+            >
+              Add note
+            </button>
+          </div>
+          <div className="min-w-0 flex-1">
+            {notes === null ? (
+              <p className="text-xs text-zinc-500">Loading…</p>
+            ) : notes.length === 0 ? (
+              <p className="text-xs text-zinc-500">No notes yet.</p>
+            ) : (
+              <ul className="flex flex-wrap gap-2">
+                {notes.map((n) => (
+                  <li
+                    key={n.id}
+                    className="max-w-md rounded-md border border-zinc-200 bg-white p-2 text-xs"
+                  >
+                    <p className="whitespace-pre-wrap break-words text-zinc-800">{n.body}</p>
+                    <div className="mt-0.5 text-[10px] text-zinc-500">
+                      {n.author_name ?? "Unknown"} · {new Date(n.created_at).toLocaleString()}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={popoverClass(isCard, "notes")} role="dialog" aria-label="Notes">
