@@ -19,7 +19,11 @@ for f in "$MIGRATIONS"/0004_supervising_atp.sql \
          "$MIGRATIONS"/0008_requires_atp_review_default_true.sql \
          "$MIGRATIONS"/0009_payer_types_admin.sql \
          "$MIGRATIONS"/0010_ensure_builtin_payer_types.sql \
-         "$MIGRATIONS"/0011_task_awaiting_signature_status.sql; do
+         "$MIGRATIONS"/0011_task_awaiting_signature_status.sql \
+         "$MIGRATIONS"/0012_task_snoozed_until.sql \
+         "$MIGRATIONS"/0013_task_notes.sql \
+         "$MIGRATIONS"/0014_notifications.sql \
+         "$MIGRATIONS"/0015_patient_birth_date.sql; do
   if [[ -f "$f" ]]; then
     echo "==> $f"
     sudo docker compose -f docker-compose.yml -f docker-compose.override.yml exec -T db \

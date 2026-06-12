@@ -19,7 +19,7 @@ export default async function PatientsListPage() {
       .from("patients")
       .select(
         `
-      id, external_code, first_name, last_name, status, created_at,
+      id, birth_date, first_name, last_name, status, created_at,
       assigned_rep_id, assigned_atp_id,
       payer:payers ( name, type ),
       rep:app_users!patients_assigned_rep_id_fkey ( full_name ),
@@ -49,7 +49,7 @@ export default async function PatientsListPage() {
   for (const p of rows) {
     const listRow: PatientListRow = {
       id: p.id,
-      external_code: p.external_code,
+      birth_date: p.birth_date,
       first_name: p.first_name,
       last_name: p.last_name,
       status: p.status,

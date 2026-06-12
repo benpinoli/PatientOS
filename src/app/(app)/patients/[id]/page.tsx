@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireUser } from "@/lib/server-helpers";
 import { fetchPatientWithTasks, computeNextStep } from "@/lib/queries";
-import { getTaskStatusLabel, ROLE_LABEL } from "@/lib/format";
+import { getTaskStatusLabel, ROLE_LABEL, formatBirthDate } from "@/lib/format";
 import { PatientTaskListResponsive } from "../../components/PatientTaskListResponsive";
 import { DeletePatientButton } from "./DeletePatientButton";
 
@@ -56,8 +56,8 @@ export default async function PatientDetailPage({
       <div>
         <dl className="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
           <div>
-            <dt className="text-xs font-medium uppercase text-zinc-400">Code</dt>
-            <dd className="text-zinc-800">{patient.external_code ?? "—"}</dd>
+            <dt className="text-xs font-medium uppercase text-zinc-400">Birth date</dt>
+            <dd className="text-zinc-800">{formatBirthDate(patient.birth_date)}</dd>
           </div>
           <div>
             <dt className="text-xs font-medium uppercase text-zinc-400">Payer</dt>

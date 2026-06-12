@@ -1,0 +1,7 @@
+﻿Choice Healthcare â€” new EC2 instance 2026-06-11 17:10
+Instance ID: i-0ceb5f7f69abea322
+Elastic IP:  32.185.154.166
+Security group: sg-09cf02af40a8a785f
+SSH key: C:\Users\pinol\.ssh\choice-tracker-key-v2.pem
+Supabase API: http://32.185.154.166:8000
+Old instance (if any): i-0c55b5678f0ec6cf7 @ 44.253.198.43

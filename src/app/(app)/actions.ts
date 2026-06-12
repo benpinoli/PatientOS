@@ -609,14 +609,14 @@ export async function createPatient(
 
     const first_name = (form.get("first_name") as string)?.trim();
     const last_name = (form.get("last_name") as string)?.trim();
-    const external_code = (form.get("external_code") as string)?.trim() || null;
+    const birth_date = (form.get("birth_date") as string)?.trim();
     const referral_source = (form.get("referral_source") as string)?.trim() || null;
     const payer_id = form.get("payer_id") as string;
     let assigned_rep_id = ((form.get("assigned_rep_id") as string) || "").trim() || null;
     const assigned_atp_id = ((form.get("assigned_atp_id") as string) || "").trim() || null;
 
-    if (!first_name || !last_name || !payer_id) {
-      return { error: "First name, last name, and payer are required." };
+    if (!first_name || !last_name || !payer_id || !birth_date) {
+      return { error: "First name, last name, birth date, and payer are required." };
     }
 
     if (!assigned_rep_id) assigned_rep_id = user.id;
@@ -624,7 +624,7 @@ export async function createPatient(
     const { data: patientId, error } = await supabase.rpc("create_patient_with_tasks", {
       p_first_name: first_name,
       p_last_name: last_name,
-      p_external_code: external_code,
+      p_birth_date: birth_date,
       p_referral_source: referral_source,
       p_payer_id: payer_id,
       p_assigned_rep_id: assigned_rep_id,

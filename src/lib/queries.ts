@@ -29,13 +29,24 @@ const QUEUE_WEIGHTS = {
   workflowOrderPenalty: 0.25,
 };
 
+export type LatestNoteSummary = {
+  body: string;
+  author_name: string | null;
+  created_at: string;
+};
+
+export type TaskWithLatestNote = Task & {
+  latest_note: LatestNoteSummary | null;
+};
+
 // Patient + tasks bundle for the dashboard. RLS does the filtering for us —
 // any patient that comes back is one the current user is allowed to see.
 export type DashboardRow = Task & {
+  latest_note?: LatestNoteSummary | null;
   patient: Pick<
     Patient,
     | "id"
-    | "external_code"
+    | "birth_date"
     | "first_name"
     | "last_name"
     | "payer_id"
@@ -51,7 +62,7 @@ export type DashboardRow = Task & {
 export type DashboardPatientGroup = {
   patient: Pick<
     Patient,
-    "id" | "external_code" | "first_name" | "last_name" | "payer_id" | "created_at"
+    "id" | "birth_date" | "first_name" | "last_name" | "payer_id" | "created_at"
   > & { payer_name?: string; payer_type?: PayerType };
   /** All tasks for matrix view (includes approved). */
   tasks: Task[];
@@ -65,7 +76,7 @@ export type DashboardBundle = {
 type RawDashboardTask = Task & {
   patient: {
     id: string;
-    external_code: string | null;
+    birth_date: string | null;
     first_name: string;
     last_name: string;
     payer_id: string;
@@ -88,7 +99,7 @@ async function fetchAllDashboardTaskRows(supabase: SB): Promise<RawDashboardTask
     `
     *,
     patient:patients!inner (
-      id, external_code, first_name, last_name, payer_id, created_at,
+      id, birth_date, first_name, last_name, payer_id, created_at,
       assigned_rep_id, assigned_atp_id,
       payer:payers ( name )
     )
@@ -111,7 +122,7 @@ export async function fetchDashboardTasks(supabase: SB): Promise<DashboardRow[]>
         ...t,
         patient: {
           id: t.patient.id,
-          external_code: t.patient.external_code,
+          birth_date: t.patient.birth_date,
           first_name: t.patient.first_name,
           last_name: t.patient.last_name,
           payer_id: t.patient.payer_id,
@@ -207,7 +218,7 @@ export async function fetchDashboardBundle(
         ...t,
         patient: {
           id: t.patient.id,
-          external_code: t.patient.external_code,
+          birth_date: t.patient.birth_date,
           first_name: t.patient.first_name,
           last_name: t.patient.last_name,
           payer_id: t.patient.payer_id,
@@ -226,7 +237,7 @@ export async function fetchDashboardBundle(
     .from("patients")
     .select(
       `
-        id, external_code, first_name, last_name, payer_id, created_at,
+        id, birth_date, first_name, last_name, payer_id, created_at,
         assigned_rep_id, assigned_atp_id,
         payer:payers ( name, type )
       `,
@@ -237,7 +248,7 @@ export async function fetchDashboardBundle(
 
   type PatientRow = {
     id: string;
-    external_code: string | null;
+    birth_date: string | null;
     first_name: string;
     last_name: string;
     payer_id: string;
@@ -260,7 +271,7 @@ export async function fetchDashboardBundle(
     return {
       patient: {
         id: row.id,
-        external_code: row.external_code,
+        birth_date: row.birth_date,
         first_name: row.first_name,
         last_name: row.last_name,
         payer_id: row.payer_id,
@@ -272,7 +283,65 @@ export async function fetchDashboardBundle(
     };
   });
 
-  return { topFive, allPatients };
+  const notesByTask = await fetchLatestNotesByTaskIds(
+    supabase,
+    topFive.map((r) => r.id),
+  );
+
+  return { topFive: attachLatestNotes(topFive, notesByTask), allPatients };
+}
+
+/** Newest note per task (one row per task_id). Graceful if task_notes missing. */
+async function fetchLatestNotesByTaskIds(
+  supabase: SB,
+  taskIds: string[],
+): Promise<Map<string, LatestNoteSummary>> {
+  const byTask = new Map<string, LatestNoteSummary>();
+  if (taskIds.length === 0) return byTask;
+
+  const { data, error } = await supabase
+    .from("task_notes")
+    .select("task_id, body, created_at, author:app_users!author_id(full_name)")
+    .in("task_id", taskIds)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    const msg = error.message.toLowerCase();
+    if (
+      msg.includes("task_notes") &&
+      (msg.includes("does not exist") || msg.includes("could not find"))
+    ) {
+      return byTask;
+    }
+    throw error;
+  }
+
+  type Row = {
+    task_id: string;
+    body: string;
+    created_at: string;
+    author: { full_name: string | null } | null;
+  };
+
+  for (const row of (data ?? []) as unknown as Row[]) {
+    if (byTask.has(row.task_id)) continue;
+    byTask.set(row.task_id, {
+      body: row.body,
+      author_name: row.author?.full_name ?? null,
+      created_at: row.created_at,
+    });
+  }
+  return byTask;
+}
+
+function attachLatestNotes<T extends { id: string }>(
+  rows: T[],
+  notesByTask: Map<string, LatestNoteSummary>,
+): (T & { latest_note: LatestNoteSummary | null })[] {
+  return rows.map((row) => ({
+    ...row,
+    latest_note: notesByTask.get(row.id) ?? null,
+  }));
 }
 
 export { isUserInvolvedOnPatient as isPatientAssignedToUser } from "@/lib/task-permissions";
@@ -391,9 +460,15 @@ export async function fetchPatientWithTasks(supabase: SB, patientId: string) {
       supabase.from("payers").select("*"),
       supabase.from("app_users").select("*"),
     ]);
+  const taskList = (tasks ?? []) as Task[];
+  const notesByTask = await fetchLatestNotesByTaskIds(
+    supabase,
+    taskList.map((t) => t.id),
+  );
+
   return {
     patient: patient as Patient | null,
-    tasks: (tasks ?? []) as Task[],
+    tasks: attachLatestNotes(taskList, notesByTask),
     payers: payers ?? [],
     users: (users ?? []) as AppUser[],
   };

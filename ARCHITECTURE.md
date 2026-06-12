@@ -89,7 +89,7 @@ That downloads and applies migrations `0004`–`0011` (including **Awaiting sign
 
 From Windows, you can also run `infra/aws/scripts/apply-migrations-from-windows.ps1`, which fixes many SSH issues (wrong IP on the firewall rule, key permissions) before giving up.
 
-If both fail, ask whoever ran the initial EC2 setup for the `choice-tracker-key.pem` file or to run the browser script for you.
+If both fail, use **CloudShell** in the AWS console (see [`infra/aws/DEPLOYMENT.md`](infra/aws/DEPLOYMENT.md) § “Option C — AWS CloudShell”). You may need a **temporary** SSH rule allowing **Anywhere** (`0.0.0.0/0`) on port 22 — **My IP** alone does not allow CloudShell or the browser connect proxy to reach the server.
 
 ## 4. Data model
 

@@ -5,8 +5,9 @@ import {
   DEFAULT_PAYER_TYPES,
   payerTypeMatrixDescription,
   payerTypeMatrixTitle,
+  sortPayerTypesForDashboard,
 } from "@/lib/payer-types";
-import { getTaskStatusClass, getTaskStatusLabel, formatDate, isOverdue } from "@/lib/format";
+import { getTaskStatusClass, getTaskStatusLabel, formatDate, formatBirthDate, isOverdue } from "@/lib/format";
 
 type MatrixColumn = {
   key: string;
@@ -104,7 +105,7 @@ function PatientMatrixTable({ groups }: { groups: DashboardPatientGroup[] }) {
                       {patient.last_name}, {patient.first_name}
                     </Link>
                     <div className="text-xs text-zinc-400">
-                      {patient.external_code}
+                      DOB {formatBirthDate(patient.birth_date)}
                       {patient.payer_name ? ` · ${patient.payer_name}` : ""}
                     </div>
                   </td>
@@ -161,7 +162,9 @@ export function DashboardPatientMatrix({
   groups: DashboardPatientGroup[];
   payerTypes?: PayerTypeRecord[];
 }) {
-  const tables = payerTypes.length > 0 ? payerTypes : DEFAULT_PAYER_TYPES;
+  const tables = sortPayerTypesForDashboard(
+    payerTypes.length > 0 ? payerTypes : DEFAULT_PAYER_TYPES,
+  );
   if (groups.length === 0) {
     return (
       <div className="rounded-md border border-dashed border-zinc-300 bg-white p-6 text-center text-sm text-zinc-500">

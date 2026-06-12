@@ -7,8 +7,10 @@ import {
   ROLE_LABEL,
   isOverdue,
   formatDate,
+  formatBirthDate,
 } from "@/lib/format";
-import { TaskActions, LatestLinkCell } from "../TaskActions";
+import type { LatestNoteSummary } from "@/lib/queries";
+import { TaskActions, LinkAndNoteCell } from "../TaskActions";
 
 export type TaskWorkCardProps = {
   task: Task;
@@ -21,11 +23,12 @@ export type TaskWorkCardProps = {
     id: string;
     last_name: string;
     first_name: string;
-    external_code: string | null;
+    birth_date: string | null;
     payer_name?: string | null;
     next_step_label?: string | null;
   };
   orderIndex?: number;
+  latestNote?: LatestNoteSummary | null;
 };
 
 export function TaskWorkCard({
@@ -36,6 +39,7 @@ export function TaskWorkCard({
   showPatient,
   patientInfo,
   orderIndex,
+  latestNote,
 }: TaskWorkCardProps) {
   const overdue = isOverdue(task.due_date);
 
@@ -55,7 +59,7 @@ export function TaskWorkCard({
             {patientInfo.last_name}, {patientInfo.first_name}
           </Link>
           <p className="mt-0.5 text-xs text-zinc-500">
-            {patientInfo.external_code}
+            DOB {formatBirthDate(patientInfo.birth_date)}
             {patientInfo.payer_name ? ` · ${patientInfo.payer_name}` : ""}
           </p>
           {patientInfo.next_step_label && (
@@ -107,9 +111,9 @@ export function TaskWorkCard({
           </dd>
         </div>
         <div className="col-span-2">
-          <dt className="font-medium uppercase tracking-wide text-zinc-400">Latest link</dt>
+          <dt className="font-medium uppercase tracking-wide text-zinc-400">Link / note</dt>
           <dd className="mt-0.5 break-all">
-            <LatestLinkCell task={task} variant="card" />
+            <LinkAndNoteCell task={task} latestNote={latestNote} variant="card" />
           </dd>
         </div>
       </dl>

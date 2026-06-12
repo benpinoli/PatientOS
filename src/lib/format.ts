@@ -49,6 +49,15 @@ export function isOverdue(due: string | null) {
   return d.getTime() < today.getTime();
 }
 
+export function formatBirthDate(d: string | null) {
+  if (!d) return "—";
+  return new Date(d + "T00:00:00").toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
 export function formatDate(d: string | null) {
   if (!d) return "—";
   return new Date(d + "T00:00:00").toLocaleDateString(undefined, {

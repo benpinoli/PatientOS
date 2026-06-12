@@ -1,8 +1,9 @@
 import Link from "next/link";
+import { formatBirthDate } from "@/lib/format";
 
 export type PatientListRow = {
   id: string;
-  external_code: string | null;
+  birth_date: string | null;
   first_name: string;
   last_name: string;
   status: string;
@@ -33,8 +34,8 @@ export function PatientTable({ rows }: { rows: PatientListRow[] }) {
             </Link>
             <dl className="mt-3 grid grid-cols-2 gap-2 text-xs">
               <div>
-                <dt className="font-medium uppercase text-zinc-400">Code</dt>
-                <dd className="mt-0.5 text-zinc-800">{p.external_code ?? "—"}</dd>
+                <dt className="font-medium uppercase text-zinc-400">Birth date</dt>
+                <dd className="mt-0.5 text-zinc-800">{formatBirthDate(p.birth_date)}</dd>
               </div>
               <div>
                 <dt className="font-medium uppercase text-zinc-400">Status</dt>
@@ -67,7 +68,7 @@ export function PatientTable({ rows }: { rows: PatientListRow[] }) {
             <thead className="bg-zinc-50 text-left text-xs uppercase tracking-wide text-zinc-500">
               <tr>
                 <th className="px-4 py-2.5">Patient</th>
-                <th className="px-4 py-2.5">Code</th>
+                <th className="px-4 py-2.5">Birth date</th>
                 <th className="px-4 py-2.5">Payer</th>
                 <th className="px-4 py-2.5">Rep</th>
                 <th className="px-4 py-2.5">ATP</th>
@@ -85,7 +86,7 @@ export function PatientTable({ rows }: { rows: PatientListRow[] }) {
                       {p.last_name}, {p.first_name}
                     </Link>
                   </td>
-                  <td className="px-4 py-3 text-xs text-zinc-500">{p.external_code ?? "—"}</td>
+                  <td className="px-4 py-3 text-xs text-zinc-500">{formatBirthDate(p.birth_date)}</td>
                   <td className="px-4 py-3 text-xs text-zinc-600">{p.payer?.name ?? "—"}</td>
                   <td className="px-4 py-3 text-xs text-zinc-600">{p.rep?.full_name ?? "—"}</td>
                   <td className="px-4 py-3 text-xs text-zinc-600">{p.atp?.full_name ?? "—"}</td>

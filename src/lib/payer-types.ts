@@ -39,6 +39,21 @@ export function mergePayerTypes(dbTypes: PayerTypeRecord[]): PayerTypeRecord[] {
   );
 }
 
+/** Dashboard "All patients" — Medicare table first, then others by sort_order. */
+export function sortPayerTypesForDashboard(
+  types: PayerTypeRecord[],
+): PayerTypeRecord[] {
+  return [...types].sort((a, b) => {
+    const medicareFirst = (code: string) => (code === "MEDICARE" ? 0 : 1);
+    const byMedicare = medicareFirst(a.code) - medicareFirst(b.code);
+    if (byMedicare !== 0) return byMedicare;
+    return (
+      a.sort_order - b.sort_order ||
+      a.display_name.localeCompare(b.display_name)
+    );
+  });
+}
+
 /** Uppercase slug for DB `payer_types.code`. */
 export function normalizePayerTypeCode(input: string): string {
   const slug = input

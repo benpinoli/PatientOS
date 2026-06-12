@@ -89,7 +89,7 @@ export function NewPatientForm({
         <Field label="First name" name="first_name" required />
         <Field label="Last name" name="last_name" required />
       </div>
-      <Field label="External code (P-####)" name="external_code" />
+      <Field label="Birth date" name="birth_date" type="date" required />
       <Field label="Referral source" name="referral_source" />
 
       <Select label="Payer" name="payer_id" required>

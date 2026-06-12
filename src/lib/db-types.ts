@@ -47,7 +47,7 @@ export type Payer = {
 
 export type Patient = {
   id: string;
-  external_code: string | null;
+  birth_date: string | null;
   first_name: string;
   last_name: string;
   payer_id: string;

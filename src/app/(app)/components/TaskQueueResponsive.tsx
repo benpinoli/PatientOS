@@ -38,10 +38,11 @@ export function TaskQueueResponsive({
               id: r.patient.id,
               last_name: r.patient.last_name,
               first_name: r.patient.first_name,
-              external_code: r.patient.external_code,
+              birth_date: r.patient.birth_date,
               payer_name: r.patient.payer_name,
               next_step_label: r.patient.next_step_label,
             }}
+            latestNote={r.latest_note}
           />
         ))}
       </div>

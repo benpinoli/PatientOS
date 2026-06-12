@@ -1,4 +1,5 @@
-import type { AppUser, Task } from "@/lib/db-types";
+import type { AppUser } from "@/lib/db-types";
+import type { TaskWithLatestNote } from "@/lib/queries";
 import type { PatientAssignment } from "@/lib/task-permissions";
 import { TaskWorkCard } from "./TaskWorkCard";
 import { PatientTaskTableDesktop } from "./PatientTaskTableDesktop";
@@ -9,7 +10,7 @@ export function PatientTaskListResponsive({
   patient,
   nextStepId,
 }: {
-  tasks: Task[];
+  tasks: TaskWithLatestNote[];
   profile: AppUser;
   patient: PatientAssignment;
   nextStepId: string | null;
@@ -33,6 +34,7 @@ export function PatientTaskListResponsive({
             patient={patient}
             orderIndex={t.order_index}
             highlight={nextStepId === t.id}
+            latestNote={t.latest_note}
           />
         ))}
       </div>
