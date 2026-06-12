@@ -99,7 +99,13 @@ export type TaskNote = {
   created_at: string;
 };
 
-export type NotificationType = "TASK_SUBMITTED_FOR_REVIEW" | "TASK_APPROVED";
+export type NotificationType =
+  | "TASK_STARTED"
+  | "TASK_LINK_ADDED"
+  | "TASK_SENT_FOR_SIGNATURE"
+  | "TASK_SUBMITTED_FOR_REVIEW"
+  | "TASK_APPROVED"
+  | "TASK_NOTE_ADDED";
 
 /** In-app notification. Stores IDs only; patient name is joined at render time under RLS. */
 export type Notification = {
@@ -128,7 +134,18 @@ export type Database = {
       notifications: { Row: Notification; Insert: Partial<Notification> & { recipient_id: string; patient_id: string; type: NotificationType }; Update: Partial<Notification> };
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      insert_task_notification: {
+        Args: {
+          p_recipient_id: string;
+          p_task_id: string;
+          p_patient_id: string;
+          p_type: NotificationType;
+          p_task_label?: string | null;
+        };
+        Returns: void;
+      };
+    };
     Enums: Record<string, never>;
   };
 };

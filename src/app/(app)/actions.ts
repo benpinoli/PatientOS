@@ -19,6 +19,7 @@ import type {
 } from "@/lib/db-types";
 import { dueDateAfterBusinessDays, toISODateString } from "@/lib/business-days";
 import { DEFAULT_DUE_DAYS } from "@/lib/constants";
+import { counterpartyOnCase } from "@/lib/notifications";
 import { normalizeExternalUrl } from "@/lib/urls";
 import {
   canApproveAtpReview,
@@ -38,11 +39,26 @@ export type CreatePatientState = { error: string } | null;
 
 export async function updateTaskStatus(taskId: string, status: TaskStatus) {
   const supabase = await getSupabaseServer();
+  const { userId, task, patient } = await loadTaskContext(supabase, taskId);
+  const previousStatus = task.status;
+
   const { error } = await supabase
     .from("tasks")
     .update({ status })
     .eq("id", taskId);
   if (error) throw new Error(error.message);
+
+  if (previousStatus === "NOT_STARTED" && status === "IN_PROGRESS") {
+    await notifyCounterparty(supabase, {
+      actorId: userId,
+      patient,
+      taskId,
+      patientId: task.patient_id,
+      type: "TASK_STARTED",
+      taskLabel: task.label,
+    });
+  }
+
   revalidatePath("/", "layout");
 }
 
@@ -156,16 +172,47 @@ async function recordLinkEvent(
 }
 
 /**
- * Insert an in-app notification for the rep<->ATP handoff. Best-effort: a
- * failure here (e.g. migration 0014 not yet applied) must never block the
- * task mutation that triggered it. No-ops when there is no recipient or when
- * the recipient is the actor (solo rep==ATP case — no self-notifications).
- *
- * Uses the service-role client because the recipient differs from the actor;
- * the originating mutation has already been authorized by the time we get here.
+ * Notify the other assignee on a shared rep+ATP case. Uses the insert_task_notification
+ * RPC (migration 0016) so production works without SUPABASE_SERVICE_ROLE_KEY.
+ * Falls back to the service-role client when the RPC is not deployed yet.
  */
-async function notifyTaskEvent(opts: {
-  recipientId: string | null | undefined;
+async function notifyCounterparty(
+  supabase: Awaited<ReturnType<typeof getSupabaseServer>>,
+  opts: {
+    actorId: string;
+    patient: PatientAssignment;
+    taskId: string;
+    patientId: string;
+    type: NotificationType;
+    taskLabel: string | null;
+  },
+) {
+  const recipientId = counterpartyOnCase(opts.actorId, opts.patient);
+  if (!recipientId) return;
+
+  const { error } = await supabase.rpc("insert_task_notification", {
+    p_recipient_id: recipientId,
+    p_task_id: opts.taskId,
+    p_patient_id: opts.patientId,
+    p_type: opts.type,
+    p_task_label: opts.taskLabel,
+  });
+
+  if (!error) return;
+
+  await notifyTaskEventAdminFallback({
+    recipientId,
+    actorId: opts.actorId,
+    taskId: opts.taskId,
+    patientId: opts.patientId,
+    type: opts.type,
+    taskLabel: opts.taskLabel,
+  });
+}
+
+/** Legacy path: service-role insert when RPC is unavailable (pre-0016). */
+async function notifyTaskEventAdminFallback(opts: {
+  recipientId: string;
   actorId: string;
   taskId: string;
   patientId: string;
@@ -176,9 +223,6 @@ async function notifyTaskEvent(opts: {
   if (!recipientId || recipientId === actorId) return;
   try {
     const admin = getSupabaseAdmin();
-    // Payload is checked against the real Insert type; the boundary cast works
-    // around the hand-written Database types collapsing insert inference to
-    // `never` (see CLAUDE.md §13).
     const row: Database["public"]["Tables"]["notifications"]["Insert"] = {
       recipient_id: recipientId,
       actor_id: actorId,
@@ -187,9 +231,12 @@ async function notifyTaskEvent(opts: {
       type,
       task_label: taskLabel,
     };
-    await admin.from("notifications").insert(row as never);
-  } catch {
-    // Swallow — notifications are non-critical and must not break the workflow.
+    const { error } = await admin.from("notifications").insert(row as never);
+    if (error) {
+      console.error("[notifications] insert failed:", error.message);
+    }
+  } catch (e) {
+    console.error("[notifications] admin client unavailable:", e);
   }
 }
 
@@ -224,6 +271,16 @@ export async function submitTaskLink(taskId: string, link: string | null) {
   if (error) throw new Error(error.message);
 
   await recordLinkEvent(supabase, taskId, userId, normalized, false);
+
+  await notifyCounterparty(supabase, {
+    actorId: userId,
+    patient,
+    taskId,
+    patientId: task.patient_id,
+    type: "TASK_LINK_ADDED",
+    taskLabel: task.label,
+  });
+
   revalidatePath("/", "layout");
 }
 
@@ -247,6 +304,21 @@ export async function submitSentForSignature(taskId: string) {
     .eq("id", taskId);
 
   if (error) wrapTaskMutationError(error);
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (user) {
+    await notifyCounterparty(supabase, {
+      actorId: user.id,
+      patient,
+      taskId,
+      patientId: task.patient_id,
+      type: "TASK_SENT_FOR_SIGNATURE",
+      taskLabel: task.label,
+    });
+  }
+
   revalidatePath("/", "layout");
 }
 
@@ -283,14 +355,23 @@ export async function submitMarkDone(
     opts.sentOtherMeans,
   );
 
-  // Submitted for ATP review → notify the assigned ATP.
+  // Notify the other assignee on shared cases.
   if (nextStatus === "DONE_PENDING_REVIEW") {
-    await notifyTaskEvent({
-      recipientId: patient.assigned_atp_id,
+    await notifyCounterparty(supabase, {
       actorId: userId,
+      patient,
       taskId,
       patientId: task.patient_id,
       type: "TASK_SUBMITTED_FOR_REVIEW",
+      taskLabel: task.label,
+    });
+  } else if (nextStatus === "APPROVED") {
+    await notifyCounterparty(supabase, {
+      actorId: userId,
+      patient,
+      taskId,
+      patientId: task.patient_id,
+      type: "TASK_APPROVED",
       taskLabel: task.label,
     });
   }
@@ -359,10 +440,9 @@ export async function completeTaskApproval(
     opts.sentOtherMeans,
   );
 
-  // Approved the rep's submission → notify the assigned rep.
-  await notifyTaskEvent({
-    recipientId: patient.assigned_rep_id,
+  await notifyCounterparty(supabase, {
     actorId: userId,
+    patient,
     taskId,
     patientId: task.patient_id,
     type: "TASK_APPROVED",
@@ -469,6 +549,20 @@ export async function addTaskNote(taskId: string, body: string) {
   } = await supabase.auth.getUser();
   if (!user) throw new Error("You must be signed in.");
 
+  const { data: task, error: taskErr } = await supabase
+    .from("tasks")
+    .select("id, patient_id, label")
+    .eq("id", taskId)
+    .maybeSingle();
+  if (taskErr || !task) throw new Error("Task not found.");
+
+  const { data: patient, error: pErr } = await supabase
+    .from("patients")
+    .select("assigned_rep_id, assigned_atp_id")
+    .eq("id", task.patient_id)
+    .maybeSingle();
+  if (pErr || !patient) throw new Error("Patient not found.");
+
   const { error } = await supabase.from("task_notes").insert({
     task_id: taskId,
     body: trimmed,
@@ -482,6 +576,16 @@ export async function addTaskNote(taskId: string, body: string) {
     }
     throw new Error(error.message);
   }
+
+  await notifyCounterparty(supabase, {
+    actorId: user.id,
+    patient: patient as PatientAssignment,
+    taskId,
+    patientId: task.patient_id,
+    type: "TASK_NOTE_ADDED",
+    taskLabel: task.label,
+  });
+
   revalidatePath("/", "layout");
 }
 
@@ -526,6 +630,18 @@ export type NotificationItem = {
   read_at: string | null;
   created_at: string;
 };
+
+/** Recent notifications + unread count (for bell polling). */
+export async function fetchNotificationBellState(): Promise<{
+  count: number;
+  items: NotificationItem[];
+}> {
+  const items = await fetchNotifications();
+  return {
+    count: items.filter((n) => !n.read_at).length,
+    items,
+  };
+}
 
 /** Recent notifications for the current user, newest first. RLS scopes to recipient. */
 export async function fetchNotifications(): Promise<NotificationItem[]> {

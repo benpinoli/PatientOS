@@ -23,7 +23,8 @@ for f in "$MIGRATIONS"/0004_supervising_atp.sql \
          "$MIGRATIONS"/0012_task_snoozed_until.sql \
          "$MIGRATIONS"/0013_task_notes.sql \
          "$MIGRATIONS"/0014_notifications.sql \
-         "$MIGRATIONS"/0015_patient_birth_date.sql; do
+         "$MIGRATIONS"/0015_patient_birth_date.sql \
+         "$MIGRATIONS"/0016_notification_events.sql; do
   if [[ -f "$f" ]]; then
     echo "==> $f"
     sudo docker compose -f docker-compose.yml -f docker-compose.override.yml exec -T db \

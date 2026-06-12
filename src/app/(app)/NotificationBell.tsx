@@ -1,14 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { notificationMessage } from "@/lib/notifications";
 import {
-  fetchNotifications,
+  fetchNotificationBellState,
   markNotificationsRead,
   markNotificationRead,
   type NotificationItem,
 } from "./actions";
+
+const POLL_MS = 20_000;
 
 function timeAgo(iso: string): string {
   const secs = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
@@ -22,13 +25,6 @@ function timeAgo(iso: string): string {
   return new Date(iso).toLocaleDateString();
 }
 
-function messageFor(item: NotificationItem): string {
-  const actor = item.actor_name ?? "Someone";
-  const label = item.task_label ? `“${item.task_label}”` : "a task";
-  if (item.type === "TASK_APPROVED") return `${actor} approved ${label}`;
-  return `${actor} submitted ${label} for review`;
-}
-
 export function NotificationBell({ initialCount }: { initialCount: number }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -36,21 +32,49 @@ export function NotificationBell({ initialCount }: { initialCount: number }) {
   const [items, setItems] = useState<NotificationItem[] | null>(null);
   const [pending, start] = useTransition();
   const rootRef = useRef<HTMLDivElement>(null);
+  const [, setTick] = useState(0);
 
-  // Keep the badge in sync when the server re-renders the layout with a fresh count.
+  const refresh = useCallback(async () => {
+    const { count: nextCount, items: nextItems } = await fetchNotificationBellState();
+    setCount(nextCount);
+    setItems(nextItems);
+    return nextCount;
+  }, []);
+
   useEffect(() => setCount(initialCount), [initialCount]);
 
-  // Lazy-load the list whenever the panel opens.
+  // Poll for new notifications while the app is open.
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      try {
+        if (!cancelled) await refresh();
+      } catch {
+        /* ignore transient network errors */
+      }
+    };
+    void run();
+    const id = window.setInterval(run, POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [refresh]);
+
+  // Re-render relative timestamps every minute.
+  useEffect(() => {
+    const id = window.setInterval(() => setTick((t) => t + 1), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  // Refresh when the panel opens (immediate fetch on top of poll).
   useEffect(() => {
     if (!open) return;
     start(async () => {
-      const rows = await fetchNotifications();
-      setItems(rows);
-      setCount(rows.filter((r) => !r.read_at).length);
+      await refresh();
     });
-  }, [open]);
+  }, [open, refresh]);
 
-  // Close on Escape.
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -92,7 +116,10 @@ export function NotificationBell({ initialCount }: { initialCount: number }) {
       >
         <BellIcon />
         {count > 0 && (
-          <span className="absolute -right-1.5 -top-1.5 inline-flex min-h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[11px] font-semibold leading-none text-white">
+          <span
+            aria-hidden
+            className="pointer-events-none absolute -right-1.5 -top-1.5 z-10 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[11px] font-bold leading-none text-white shadow-sm ring-2 ring-white"
+          >
             {count > 9 ? "9+" : count}
           </span>
         )}
@@ -112,7 +139,7 @@ export function NotificationBell({ initialCount }: { initialCount: number }) {
             className="absolute right-0 top-full z-50 mt-2 max-h-[min(70vh,28rem)] w-80 max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded-lg border border-zinc-200 bg-white p-3 text-left shadow-xl"
           >
             <div className="flex items-center justify-between gap-2">
-              <span className="text-sm font-semibold text-zinc-900">Notifications</span>
+              <span className="text-sm font-semibold text-zinc-900">Recent activity</span>
               <button
                 type="button"
                 onClick={onMarkAll}
@@ -126,34 +153,31 @@ export function NotificationBell({ initialCount }: { initialCount: number }) {
             {items === null ? (
               <p className="mt-3 text-sm text-zinc-500">Loading…</p>
             ) : items.length === 0 ? (
-              <p className="mt-3 text-sm text-zinc-500">No notifications yet.</p>
+              <p className="mt-3 text-sm text-zinc-500">
+                No activity yet. Updates on shared patients appear here when your partner
+                works a task.
+              </p>
             ) : (
-              <ul className="mt-2 space-y-1">
+              <ul className="mt-2 space-y-2">
                 {items.map((item) => (
                   <li key={item.id}>
                     <Link
                       href={`/patients/${item.patient_id}`}
                       onClick={() => onItemClick(item)}
                       className={
-                        "block rounded-md px-2 py-2 text-sm hover:bg-zinc-50 " +
-                        (item.read_at ? "" : "bg-blue-50/60")
+                        "block rounded-lg border px-3 py-2.5 transition hover:border-zinc-300 hover:bg-zinc-50 " +
+                        (item.read_at
+                          ? "border-zinc-200 bg-white"
+                          : "border-blue-200 bg-blue-50/50")
                       }
                     >
-                      <div className="flex items-start gap-2">
-                        {!item.read_at && (
-                          <span
-                            aria-hidden
-                            className="mt-1.5 size-2 shrink-0 rounded-full bg-blue-600"
-                          />
-                        )}
-                        <div className={item.read_at ? "pl-4" : ""}>
-                          <p className="text-zinc-800">{messageFor(item)}</p>
-                          {item.patient_name && (
-                            <p className="text-xs text-zinc-500">on {item.patient_name}</p>
-                          )}
-                          <p className="text-xs text-zinc-400">{timeAgo(item.created_at)}</p>
-                        </div>
-                      </div>
+                      <p className="text-sm leading-snug text-zinc-900">
+                        {notificationMessage(item.type, item.actor_name, item.task_label)}
+                      </p>
+                      {item.patient_name && (
+                        <p className="mt-0.5 text-xs text-zinc-600">{item.patient_name}</p>
+                      )}
+                      <p className="mt-1 text-xs text-zinc-400">{timeAgo(item.created_at)}</p>
                     </Link>
                   </li>
                 ))}
