@@ -92,7 +92,7 @@ Copy `ANON_KEY` / `SERVICE_ROLE_KEY` from `/opt/choice-supabase/.env` into Ampli
 
 ## Step 8 — Cutover
 
-1. Smoke-test Amplify URL (login as `tara@choice.example` / `password123` on **seeded** stack only).
+1. Smoke-test Amplify URL (login as `tara@patientos.example` / `password123` on **seeded** stack only).
 2. Parallel-run against managed `ftxxexwzrhyrqjguagbi` until confident.
 3. Pause managed Supabase project after ~1 week.
 

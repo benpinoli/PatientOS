@@ -1,5 +1,5 @@
 -- ============================================================
--- Synthetic seed data for the Choice Healthcare tracker.
+-- Synthetic seed data for the PatientOS tracker.
 --
 -- This file is for LOCAL DEV / DEMO ONLY on the Supabase free tier.
 -- It uses entirely made-up patients. Never load this in production.
@@ -38,18 +38,18 @@ values
     '00000000-0000-0000-0000-000000000001',
     '00000000-0000-0000-0000-000000000000',
     'authenticated', 'authenticated',
-    'deanne@choice.example',
+    'deanne@patientos.example',
     crypt('password123', gen_salt('bf')),
     now(),
     jsonb_build_object('provider','email','providers',array['email']),
-    jsonb_build_object('full_name','DeAnne Choice'),
+    jsonb_build_object('full_name','DeAnne Boss'),
     now(), now(), '', '', '', ''
   ),
   (
     '00000000-0000-0000-0000-000000000002',
     '00000000-0000-0000-0000-000000000000',
     'authenticated', 'authenticated',
-    'matt@choice.example',
+    'matt@patientos.example',
     crypt('password123', gen_salt('bf')),
     now(),
     jsonb_build_object('provider','email','providers',array['email']),
@@ -60,7 +60,7 @@ values
     '00000000-0000-0000-0000-000000000003',
     '00000000-0000-0000-0000-000000000000',
     'authenticated', 'authenticated',
-    'steve@choice.example',
+    'steve@patientos.example',
     crypt('password123', gen_salt('bf')),
     now(),
     jsonb_build_object('provider','email','providers',array['email']),
@@ -71,7 +71,7 @@ values
     '00000000-0000-0000-0000-000000000004',
     '00000000-0000-0000-0000-000000000000',
     'authenticated', 'authenticated',
-    'tara@choice.example',
+    'tara@patientos.example',
     crypt('password123', gen_salt('bf')),
     now(),
     jsonb_build_object('provider','email','providers',array['email']),
@@ -82,7 +82,7 @@ values
     '00000000-0000-0000-0000-000000000005',
     '00000000-0000-0000-0000-000000000000',
     'authenticated', 'authenticated',
-    'jack@choice.example',
+    'jack@patientos.example',
     crypt('password123', gen_salt('bf')),
     now(),
     jsonb_build_object('provider','email','providers',array['email']),
@@ -117,7 +117,7 @@ on conflict do nothing;
 -- 2. Promote app_users rows the trigger just made
 -- ------------------------------------------------------------
 update public.app_users set
-  full_name = 'DeAnne Choice',
+  full_name = 'DeAnne Boss',
   roles = array['BOSS'],
   location = 'HQ',
   active = true
@@ -231,7 +231,7 @@ values
   ('20000000-0000-0000-0000-000000000006', '1958-04-14', 'Frank',  'Foster',
     '10000000-0000-0000-0000-000000000002', 'Hospital referral',
     '00000000-0000-0000-0000-000000000005', '00000000-0000-0000-0000-000000000003', 'ACTIVE'),
-  -- Matt-as-rep patients. Managers at Choice carry their own caseload too;
+  -- Matt-as-rep patients. Managers carry their own caseload too;
   -- their dashboard isn't primarily a rollup of other people's work.
   -- Grace is a SOLO CASE (Matt is both rep and ATP) — common pattern.
   ('20000000-0000-0000-0000-000000000007', '1967-06-25', 'Grace',  'Greene',

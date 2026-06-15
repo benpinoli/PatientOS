@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Choice Healthcare Tracker",
+  title: "PatientOS",
   description: "Patient pipeline tracker for custom power wheelchair approvals.",
 };
 

@@ -99,7 +99,7 @@ export function LoginForm({
           <input
             type="email"
             required
-            placeholder="email@choice.example"
+            placeholder="email@example.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm"
@@ -130,7 +130,7 @@ export function LoginForm({
           </button>
           <p className="text-xs text-zinc-400">
             Sessions are kept in your browser for about 30 days when &quot;Stay signed in&quot; is
-            checked. Seed users: deanne / matt / steve / tara / jack @ choice.example (password{" "}
+            checked. Seed users: deanne / matt / steve / tara / jack @ patientos.example (password{" "}
             <code>password123</code>).
           </p>
         </form>

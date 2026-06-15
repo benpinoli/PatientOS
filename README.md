@@ -82,7 +82,7 @@ npm run dev
 ```
 
 Open <http://localhost:3000>. Sign in with any seed user
-(`<name>@choice.example` / `password123`). The dashboard, patient detail,
+(`<name>@patientos.example` / `password123`). The dashboard, patient detail,
 manager rollup, and ATP gate are all wired through RLS — sign in as
 different users to see the visibility model in action.
 

@@ -24,7 +24,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center justify-between gap-3">
               <Link href="/" className="text-base font-semibold text-zinc-900">
-                Choice Tracker
+                PatientOS
               </Link>
               <div className="flex items-center gap-2 sm:hidden">
                 <NotificationBell initialCount={unreadNotifications} />

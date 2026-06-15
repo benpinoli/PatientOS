@@ -23,11 +23,11 @@ The system has four roles. A user can hold multiple (e.g. Matt is both `MANAGER`
 
 | Email | Name | Roles | Manager | Notes |
 |---|---|---|---|---|
-| `deanne@choice.example` | DeAnne Choice | `BOSS` | — | Owner; full visibility |
-| `matt@choice.example` | Matt Manager | `MANAGER`, `ATP` | — | Managers Steve/Tara/Jack |
-| `steve@choice.example` | Steve ATP | `ATP` | Matt | Pure ATP |
-| `tara@choice.example` | Tara Rep | `REP` | Matt | Reno location |
-| `jack@choice.example` | Jack Rep | `REP` | Matt | Las Vegas location |
+| `deanne@patientos.example` | DeAnne Choice | `BOSS` | — | Owner; full visibility |
+| `matt@patientos.example` | Matt Manager | `MANAGER`, `ATP` | — | Managers Steve/Tara/Jack |
+| `steve@patientos.example` | Steve ATP | `ATP` | Matt | Pure ATP |
+| `tara@patientos.example` | Tara Rep | `REP` | Matt | Reno location |
+| `jack@patientos.example` | Jack Rep | `REP` | Matt | Las Vegas location |
 
 UUIDs are deterministic in `supabase/seed.sql` (`00000000-0000-0000-0000-00000000000{1..5}`) so foreign keys can be wired by hand.
 

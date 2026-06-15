@@ -137,7 +137,7 @@ ssh -i ~/.ssh/choice-tracker-key.pem ubuntu@44.253.198.43
 sudo grep -E '^ANON_KEY=|^SERVICE_ROLE_KEY=' /opt/choice-supabase/.env
 ```
 
-Demo login (seed): `tara@choice.example` / `password123`
+Demo login (seed): `tara@patientos.example` / `password123`
 
 ## 3. Amplify → EC2 (HTTPS proxy, no Supabase Cloud)
 
