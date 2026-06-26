@@ -81,15 +81,21 @@ export const PAGE_STYLE = `
      No auto-centering — that confused html2canvas and produced a blank page. */
   body { width: 8.5in; max-width: 100%; padding: 0.5in; box-sizing: border-box; }
   *, *::before, *::after { box-sizing: border-box; }
+  /* Keep background colors (e.g. black section headers) in the rasterised PDF. */
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   /* min-width:0 lets flex children actually shrink/wrap instead of forcing the
-     row wider than the page (the main cause of text running off the right). */
+     row wider than the page (one cause of text running off the right). */
   body * { max-width: 100%; min-width: 0; }
   img { max-width: 100%; height: auto; }
   table { width: 100%; table-layout: fixed; border-collapse: collapse; }
   td, th { overflow-wrap: anywhere; word-break: break-word; }
   input, textarea, select { max-width: 100%; }
-  /* Let rows wrap to the page instead of overflowing; label+input+unit
-     clusters keep their own nowrap so units never detach. */
+  /* The model often wraps whole sentences/questions in white-space:nowrap, which
+     makes the text run off the page. Force normal wrapping everywhere EXCEPT
+     textarea/pre (which need their own whitespace). Short units stay attached via
+     non-breaking spaces, which still hold under white-space:normal. */
+  body *:not(textarea):not(pre) { white-space: normal !important; }
+  /* Let rows wrap to the page instead of overflowing. */
   [style*="flex-wrap:nowrap"], [style*="flex-wrap: nowrap"] { flex-wrap: wrap !important; }
 `;
 
