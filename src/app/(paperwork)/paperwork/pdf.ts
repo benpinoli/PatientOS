@@ -3,12 +3,19 @@
 // Client-side PDF + zip helpers for the filled paperwork documents.
 //
 // Filled documents are HTML strings. We render each one in an offscreen iframe
-// (so its <head>/<style> applies) and rasterise it to a PDF with html2pdf.js.
+// (so its <head>/<style> applies) and rasterise it with html2canvas, then build
+// a US Letter PDF with jsPDF. We deliberately do NOT use html2pdf.js's
+// `.from(element)` helper: it clones only the <body> into the MAIN document,
+// which drops every <head> <style> rule (.page widths, .row flex, the black
+// section headers, our normalization) so the export looked nothing like the
+// preview. Driving html2canvas on the iframe body keeps those styles.
 // For bulk export we bundle the PDFs into a single .zip (a "folder") with JSZip.
-// Both libraries are loaded on demand from a CDN — same pattern as PdfThumbnail.
+// Libraries are loaded on demand from a CDN — same pattern as PdfThumbnail.
 
-const HTML2PDF_SRC =
-  "https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.3/html2pdf.bundle.min.js";
+const HTML2CANVAS_SRC =
+  "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
+const JSPDF_SRC =
+  "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js";
 const JSZIP_SRC =
   "https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js";
 
@@ -38,16 +45,26 @@ function loadScript(src: string): Promise<void> {
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-let html2pdfPromise: Promise<any> | null = null;
+let html2canvasPromise: Promise<any> | null = null;
+let jsPdfPromise: Promise<any> | null = null;
 let jsZipPromise: Promise<any> | null = null;
 
-function getHtml2pdf(): Promise<any> {
-  if (!html2pdfPromise) {
-    html2pdfPromise = loadScript(HTML2PDF_SRC).then(
-      () => (window as any).html2pdf,
+function getHtml2canvas(): Promise<any> {
+  if (!html2canvasPromise) {
+    html2canvasPromise = loadScript(HTML2CANVAS_SRC).then(
+      () => (window as any).html2canvas,
     );
   }
-  return html2pdfPromise;
+  return html2canvasPromise;
+}
+
+function getJsPDF(): Promise<any> {
+  if (!jsPdfPromise) {
+    jsPdfPromise = loadScript(JSPDF_SRC).then(
+      () => (window as any).jspdf?.jsPDF ?? (window as any).jsPDF,
+    );
+  }
+  return jsPdfPromise;
 }
 
 function getJsZip(): Promise<any> {
@@ -117,7 +134,10 @@ export function injectPageStyle(html: string): string {
 
 /** Renders a full HTML document string to a US Letter PDF Blob. */
 export async function htmlToPdfBlob(html: string): Promise<Blob> {
-  const html2pdf = await getHtml2pdf();
+  const [html2canvas, jsPDF] = await Promise.all([
+    getHtml2canvas(),
+    getJsPDF(),
+  ]);
 
   const iframe = document.createElement("iframe");
   iframe.style.position = "fixed";
@@ -137,31 +157,57 @@ export async function htmlToPdfBlob(html: string): Promise<Blob> {
     // Give the iframe a moment to lay out fonts/images before rasterising.
     await new Promise((r) => setTimeout(r, 400));
 
-    const opt = {
-      // Margins live in PAGE_STYLE (body padding) so they can't double up.
-      margin: 0,
-      image: { type: "jpeg", quality: 0.96 },
-      html2canvas: {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: "#ffffff",
-        // Pin the capture to exactly one page width so overflow can't blow up
-        // the canvas and shrink the output.
-        width: RENDER_WIDTH,
-        windowWidth: RENDER_WIDTH,
-        scrollX: 0,
-        scrollY: 0,
-        x: 0,
-        y: 0,
-      },
-      jsPDF: { unit: "pt", format: "letter", orientation: "portrait" },
-      pagebreak: { mode: ["css", "legacy"] },
-    };
+    // Grow the iframe to the full content height so multi-page forms are fully
+    // captured (html2canvas renders the body's complete scroll height).
+    const fullHeight = Math.max(
+      doc.body.scrollHeight,
+      doc.documentElement.scrollHeight,
+    );
+    iframe.style.height = `${fullHeight}px`;
+    await new Promise((r) => setTimeout(r, 50));
 
-    return (await html2pdf()
-      .set(opt)
-      .from(doc.body)
-      .outputPdf("blob")) as Blob;
+    // Rasterise inside the iframe (its <head> styles apply here, unlike
+    // html2pdf's clone-into-main-document approach).
+    const canvas = await html2canvas(doc.body, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: "#ffffff",
+      width: RENDER_WIDTH,
+      height: fullHeight,
+      windowWidth: RENDER_WIDTH,
+      windowHeight: fullHeight,
+      scrollX: 0,
+      scrollY: 0,
+      x: 0,
+      y: 0,
+    });
+
+    const pdf = new jsPDF({
+      unit: "pt",
+      format: "letter",
+      orientation: "portrait",
+    });
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+    // Map the full-width canvas onto the full page width (margins already live
+    // in the body padding), preserving aspect ratio.
+    const imgW = pageW;
+    const imgH = (canvas.height * pageW) / canvas.width;
+    const imgData = canvas.toDataURL("image/jpeg", 0.96);
+
+    let heightLeft = imgH;
+    let position = 0;
+    pdf.addImage(imgData, "JPEG", 0, position, imgW, imgH);
+    heightLeft -= pageH;
+    // Slice the tall image across additional Letter pages as needed.
+    while (heightLeft > 0) {
+      position = heightLeft - imgH;
+      pdf.addPage();
+      pdf.addImage(imgData, "JPEG", 0, position, imgW, imgH);
+      heightLeft -= pageH;
+    }
+
+    return pdf.output("blob") as Blob;
   } finally {
     iframe.remove();
   }
