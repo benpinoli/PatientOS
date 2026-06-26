@@ -123,7 +123,7 @@ export function TemplatesPanel({
   const [deletingLogo, setDeletingLogo] = useState(false);
   const [companyDraft, setCompanyDraft] = useState("");
   const [savingCompany, setSavingCompany] = useState(false);
-  const [fullView, setFullView] = useState(false);
+  const [fullView, setFullView] = useState<null | "doc" | "blank">(null);
   const [savingTyped, setSavingTyped] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const logoRef = useRef<HTMLInputElement>(null);
@@ -139,11 +139,19 @@ export function TemplatesPanel({
 
   // Close the full-view editor whenever the selected template changes.
   useEffect(() => {
-    setFullView(false);
+    setFullView(null);
   }, [selectedId]);
 
   const selectedDoc = documents.find((d) => d.template_id === selectedId) ?? null;
   const selectedTemplate = templates.find((t) => t.id === selectedId) ?? null;
+  // The blank (unfilled) editable form for the selected template, with branding.
+  const blankHtml = selectedTemplate?.html
+    ? embedLogo(
+        selectedTemplate.html,
+        selectedTemplate.logo_data_uri,
+        selectedTemplate.logo_company_name,
+      )
+    : "";
   const filledDocs = documents;
   const busyDownload = downloadMsg !== null;
 
@@ -194,10 +202,31 @@ export function TemplatesPanel({
   /** HTML for `doc`, preferring live typed values when its iframe is open. */
   const htmlForDoc = (doc: PaperworkDocument): string => {
     if (selectedDoc && doc.id === selectedDoc.id) {
-      const iframe = fullView ? fullRef.current : previewRef.current;
+      const iframe = fullView === "doc" ? fullRef.current : previewRef.current;
       return captureHtmlFromIframe(iframe, doc.filled_html);
     }
     return doc.filled_html;
+  };
+
+  /** Blank-template HTML, preferring live typed values from whichever iframe shows it. */
+  const liveBlankHtml = (): string => {
+    if (fullView === "blank") return captureHtmlFromIframe(fullRef.current, blankHtml);
+    if (!selectedDoc) return captureHtmlFromIframe(previewRef.current, blankHtml);
+    return blankHtml;
+  };
+
+  const downloadBlank = async () => {
+    if (!selectedTemplate) return;
+    setDownloadMsg("Building PDF…");
+    setError(null);
+    try {
+      const blob = await htmlToPdfBlob(liveBlankHtml());
+      downloadBlob(blob, safePdfName(selectedTemplate.name));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not build the PDF.");
+    } finally {
+      setDownloadMsg(null);
+    }
   };
 
   /**
@@ -691,7 +720,7 @@ export function TemplatesPanel({
               <>
                 <button
                   className="tron-btn text-xs"
-                  onClick={() => setFullView(true)}
+                  onClick={() => setFullView("doc")}
                 >
                   Open full view
                 </button>
@@ -704,6 +733,25 @@ export function TemplatesPanel({
                 </button>
                 <button className="tron-btn text-xs" onClick={startEdit}>
                   Edit HTML
+                </button>
+              </>
+            )}
+            {blankHtml && !editing && (
+              <>
+                <button
+                  className="tron-btn text-xs"
+                  onClick={() => setFullView("blank")}
+                  title="View the empty template at full size"
+                >
+                  Full view (blank)
+                </button>
+                <button
+                  className="tron-btn text-xs"
+                  onClick={downloadBlank}
+                  disabled={busyDownload}
+                  title="Download the empty template as a PDF"
+                >
+                  {busyDownload ? downloadMsg : "Download blank PDF"}
                 </button>
               </>
             )}
@@ -741,6 +789,14 @@ export function TemplatesPanel({
               sandbox="allow-same-origin"
               srcDoc={injectPageStyle(selectedDoc.filled_html)}
             />
+          ) : blankHtml ? (
+            <iframe
+              ref={previewRef}
+              title="Blank template"
+              className="min-h-96 flex-1 rounded-lg border border-[var(--tron-line)] bg-white"
+              sandbox="allow-same-origin"
+              srcDoc={injectPageStyle(blankHtml)}
+            />
           ) : (
             <div className="flex min-h-48 flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--tron-line)] text-xs text-[var(--tron-muted)]">
               {disabled
@@ -751,29 +807,37 @@ export function TemplatesPanel({
         </div>
       )}
 
-      {fullView && selectedDoc && (
+      {fullView && (fullView === "blank" ? selectedTemplate : selectedDoc) && (
         <div className="fixed inset-0 z-50 flex flex-col bg-black/80 p-4">
           <div className="mx-auto flex w-full max-w-[860px] items-center gap-2 pb-3">
             <h3 className="tron-panel-title mr-auto truncate">
-              {selectedDoc.template_name ?? "Document"}
+              {fullView === "blank"
+                ? `${selectedTemplate?.name ?? "Template"} (blank)`
+                : (selectedDoc?.template_name ?? "Document")}
             </h3>
             <button
               className="tron-btn text-xs"
-              onClick={() => downloadOne(selectedDoc)}
+              onClick={() =>
+                fullView === "blank"
+                  ? downloadBlank()
+                  : selectedDoc && downloadOne(selectedDoc)
+              }
               disabled={busyDownload}
             >
               {busyDownload ? downloadMsg : "Download PDF"}
             </button>
+            {fullView === "doc" && selectedDoc && (
+              <button
+                className="tron-btn text-xs"
+                onClick={() => saveTyped(selectedDoc)}
+                disabled={savingTyped}
+              >
+                {savingTyped ? "Saving…" : "Save typed text"}
+              </button>
+            )}
             <button
               className="tron-btn text-xs"
-              onClick={() => saveTyped(selectedDoc)}
-              disabled={savingTyped}
-            >
-              {savingTyped ? "Saving…" : "Save typed text"}
-            </button>
-            <button
-              className="tron-btn text-xs"
-              onClick={() => setFullView(false)}
+              onClick={() => setFullView(null)}
             >
               Close
             </button>
@@ -783,7 +847,9 @@ export function TemplatesPanel({
               ref={fullRef}
               title="Full view"
               sandbox="allow-same-origin"
-              srcDoc={injectPageStyle(selectedDoc.filled_html)}
+              srcDoc={injectPageStyle(
+                fullView === "blank" ? blankHtml : (selectedDoc?.filled_html ?? ""),
+              )}
               className="mx-auto block border-0 bg-white shadow-lg"
               style={{ width: "816px", height: "1056px" }}
               onLoad={(e) => {
