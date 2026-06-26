@@ -55,6 +55,8 @@ export type Patient = {
   assigned_rep_id: string | null;
   assigned_atp_id: string | null;
   status: PatientStatus;
+  /** Link to the patient's shared Drive folder (same links used in the tracker). */
+  drive_folder_url: string | null;
   created_at: string;
 };
 
@@ -120,6 +122,70 @@ export type Notification = {
   created_at: string;
 };
 
+// ---------------------------------------------------------------------------
+// Paperwork AI extension
+// ---------------------------------------------------------------------------
+
+/** Structured patient JSON — canonical shape in `src/lib/paperwork/schema.ts`. */
+export type PaperworkPatientData = Record<string, unknown>;
+
+/** One structured JSON record per patient. */
+export type PaperworkPatientDataRow = {
+  patient_id: string;
+  data: PaperworkPatientData;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+/** A single field requirement extracted from a template (companion JSON entry). */
+export type TemplateRequiredField = {
+  /** Human label as it appears on the form. */
+  label: string;
+  /** Dotted path into the canonical patient JSON, when it maps cleanly. */
+  json_path?: string | null;
+  required?: boolean;
+};
+
+/** Shared, reusable PDF template converted to editable HTML. */
+export type PaperworkTemplate = {
+  id: string;
+  name: string;
+  source_path: string | null;
+  source_mime: string | null;
+  html: string;
+  required_fields: TemplateRequiredField[];
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PaperworkDocumentStatus = "DRAFT" | "FINAL";
+
+/** Per patient+template filled output (editable HTML). */
+export type PaperworkDocument = {
+  id: string;
+  patient_id: string;
+  template_id: string | null;
+  template_name: string | null;
+  filled_html: string;
+  status: PaperworkDocumentStatus;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+/** Metadata for an uploaded patient source document (bytes live in Storage). */
+export type PaperworkSourceFile = {
+  id: string;
+  patient_id: string;
+  storage_path: string;
+  filename: string;
+  mime: string | null;
+  uploaded_by: string | null;
+  created_at: string;
+};
+
 // Minimal `Database` shape so the supabase-js generics know our tables.
 export type Database = {
   public: {
@@ -132,6 +198,10 @@ export type Database = {
       payer_types: { Row: PayerTypeRecord; Insert: Partial<PayerTypeRecord> & { code: string }; Update: Partial<PayerTypeRecord> };
       task_notes: { Row: TaskNote; Insert: Partial<TaskNote> & { task_id: string; body: string }; Update: Partial<TaskNote> };
       notifications: { Row: Notification; Insert: Partial<Notification> & { recipient_id: string; patient_id: string; type: NotificationType }; Update: Partial<Notification> };
+      paperwork_patient_data: { Row: PaperworkPatientDataRow; Insert: Partial<PaperworkPatientDataRow> & { patient_id: string }; Update: Partial<PaperworkPatientDataRow> };
+      paperwork_templates: { Row: PaperworkTemplate; Insert: Partial<PaperworkTemplate> & { name: string }; Update: Partial<PaperworkTemplate> };
+      paperwork_documents: { Row: PaperworkDocument; Insert: Partial<PaperworkDocument> & { patient_id: string }; Update: Partial<PaperworkDocument> };
+      paperwork_source_files: { Row: PaperworkSourceFile; Insert: Partial<PaperworkSourceFile> & { patient_id: string; storage_path: string; filename: string }; Update: Partial<PaperworkSourceFile> };
     };
     Views: Record<string, never>;
     Functions: {

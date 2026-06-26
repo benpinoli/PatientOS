@@ -189,6 +189,60 @@ After smoke-testing Amplify + EC2, pause the managed project `ftxxexwzrhyrqjguag
 
 See [caddy/Caddyfile](./caddy/Caddyfile). Then set `NEXT_PUBLIC_SUPABASE_URL=https://api.yourdomain.com` and skip the `/supabase` proxy.
 
+## Paperwork AI (Gemini extension)
+
+The `/paperwork` section uses Gemini to extract a structured patient JSON, turn
+blank PDF templates into editable HTML, and auto-fill them. It needs object
+storage and a Gemini key.
+
+### 1. Enable Supabase Storage on EC2
+
+`infra/aws/docker/docker-compose.override.yml` no longer disables `storage` /
+`imgproxy`. Bring them up and ensure the storage env vars exist in
+`/opt/choice-supabase/.env` (upstream defaults: `STORAGE_BACKEND=file`,
+`FILE_SIZE_LIMIT`, `GLOBAL_S3_BUCKET`, etc. — keep the values shipped with the
+Supabase docker template):
+
+```bash
+cd /opt/choice-supabase
+git pull   # or copy the updated override file up
+sudo docker compose -f docker-compose.yml -f docker-compose.override.yml up -d db meta auth rest kong storage imgproxy
+```
+
+### 2. Apply migrations
+
+`0017_paperwork_ai.sql` (tables + RLS) and `0018_paperwork_storage.sql`
+(buckets `paperwork-source` / `paperwork-templates` + object policies). The
+0018 migration is guarded by a `to_regclass('storage.buckets')` check, so run it
+**after** the storage container is up; otherwise it logs a notice and skips the
+bucket setup (re-run it once storage exists). Apply with the usual
+`infra/aws/scripts/apply-migrations-*` flow.
+
+### 3. Gemini API key (server-only)
+
+Add `GEMINI_API_KEY` to Amplify branch env and local `.env.local`. NEVER prefix
+it with `NEXT_PUBLIC`. Optional `GEMINI_MODEL` / `GEMINI_MODEL_PRO` overrides.
+
+```powershell
+aws amplify update-app --region us-west-2 --app-id <app-id> --environment-variables GEMINI_API_KEY=<key>,...existing
+```
+
+### 4. Real-PHI gate (must clear before any real patient data)
+
+This feature reverses the v1 "no document storage / no AI drafting" stance
+(`CLAUDE.md` §15–16), so until every item below is done it runs on **synthetic
+data only** (the in-app amber banner states this):
+
+- [ ] **Google Cloud / Vertex AI BAA** covering Gemini for the data you send.
+      Until signed, do not send real PHI to `/api/paperwork/*`.
+- [ ] **HIPAA-grade Storage**: encrypted EBS for the storage volume, restricted
+      bucket access (private buckets + the RLS policies in 0018), no public URLs.
+- [ ] **Audit logging** for storage object access and paperwork table writes.
+- [ ] **Backups + retention** for the new tables and storage volume.
+- [ ] **Key handling**: `GEMINI_API_KEY` stored only in server env / secrets
+      manager; rotate on staff changes.
+- [ ] **Re-confirm** the synthetic-only banner is removed only after the above.
+
 ## Tear down (cost control)
 
 ```powershell

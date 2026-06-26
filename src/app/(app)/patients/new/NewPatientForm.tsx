@@ -91,6 +91,7 @@ export function NewPatientForm({
       </div>
       <Field label="Birth date" name="birth_date" type="date" required />
       <Field label="Referral source" name="referral_source" />
+      <Field label="Drive folder URL" name="drive_folder_url" type="url" />
 
       <Select label="Payer" name="payer_id" required>
         <option value="">Select a payer…</option>

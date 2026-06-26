@@ -1,7 +1,9 @@
 # Trimmed stack for Choice Healthcare tracker (v1).
 # Upstream Supabase docker ties Kong/Studio to analytics — we override those edges.
 #
-#   docker compose -f docker-compose.yml -f docker-compose.override.yml up -d db meta auth rest kong
+# Paperwork AI (Gemini extension) needs object storage, so `storage` + `imgproxy`
+# are now enabled. Bring the stack up with:
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml up -d db meta auth rest kong storage imgproxy
 
 name: supabase
 
@@ -12,15 +14,13 @@ services:
         condition: service_started
       rest:
         condition: service_started
+      storage:
+        condition: service_started
 
   studio:
     profiles: ["disabled"]
 
   realtime:
-    profiles: ["disabled"]
-  storage:
-    profiles: ["disabled"]
-  imgproxy:
     profiles: ["disabled"]
   functions:
     profiles: ["disabled"]

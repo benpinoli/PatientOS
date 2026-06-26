@@ -5,6 +5,7 @@ import { fetchPatientWithTasks, computeNextStep } from "@/lib/queries";
 import { getTaskStatusLabel, ROLE_LABEL, formatBirthDate } from "@/lib/format";
 import { PatientTaskListResponsive } from "../../components/PatientTaskListResponsive";
 import { DeletePatientButton } from "./DeletePatientButton";
+import { DriveFolderEditor } from "./DriveFolderEditor";
 
 export const dynamic = "force-dynamic";
 
@@ -70,6 +71,15 @@ export default async function PatientDetailPage({
           <div>
             <dt className="text-xs font-medium uppercase text-zinc-400">ATP</dt>
             <dd className="text-zinc-800">{atp?.full_name ?? "unassigned"}</dd>
+          </div>
+          <div className="sm:col-span-2">
+            <dt className="text-xs font-medium uppercase text-zinc-400">Drive folder</dt>
+            <dd className="mt-1">
+              <DriveFolderEditor
+                patientId={patient.id}
+                initialUrl={patient.drive_folder_url}
+              />
+            </dd>
           </div>
         </dl>
       </div>

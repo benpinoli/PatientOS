@@ -1,0 +1,112 @@
+{
+  "patient_demographics": {
+    "last_name": "",
+    "first_name": "",
+    "middle_initial": "",
+    "date_of_birth": "YYYY-MM-DD",
+    "sex": "Male/Female",
+    "weight_lbs": null,
+    "height_inches": null,
+    "residing_address": {
+      "street": "",
+      "city": "",
+      "state": "",
+      "zip_code": ""
+    },
+    "phone_number": "",
+    "place_of_service_code": "", 
+    "facility_name_if_applicable": ""
+  },
+  "insurance_billing": {
+    "primary_insurer_name": "",
+    "policy_id": "",
+    "group_number": "",
+    "medicare_number_hicn": "",
+    "medicaid_number": "",
+    "assignment_of_benefits_authorized": true,
+    "patient_signature_status": {
+      "physically_mentally_able_to_sign": true,
+      "reason_if_no": "",
+      "authorized_representative_name": "",
+      "authorized_representative_relationship": ""
+    }
+  },
+  "responsible_party": {
+    "name": "",
+    "relationship_to_patient": "",
+    "phone": "",
+    "address": {
+      "street": "",
+      "city": "",
+      "state": "",
+      "zip_code": ""
+    }
+  },
+  "clinical_status_diagnoses": {
+    "primary_justifying_diagnosis_icd10": [],
+    "complicating_conditions": [],
+    "mobility_status": "Bed Confined / Wheelchair Confined / Ambulatory w-assist / Ambulatory",
+    "prognosis": "Good / Fair / Poor",
+    "active_rehab_status": false,
+    "contractures_impair_functional_ability": false,
+    "skin_integrity_pressure_ulcers": {
+      "completely_immobile": false,
+      "limited_mobility_cannot_alleviate_pressure": false,
+      "has_pressure_ulcer_on_trunk_or_pelvis": false,
+      "ulcer_locations": [],
+      "impaired_nutritional_status": false,
+      "fecal_or_urinary_incontinence": "None / Fecal / Urinary / Both",
+      "altered_sensory_perception": false,
+      "compromised_circulatory_status": false
+    }
+  },
+  "power_mobility_device_pmd_specifics": {
+    "date_of_face_to_face_visit": "YYYY-MM-DD",
+    "date_equipment_prescribed": "YYYY-MM-DD",
+    "estimated_length_of_need_months": 99, 
+    "expected_outcome_goals": "",
+    "equipment_type_requested": "Group I Motorized Chair / Group II Motorized Chair / Group III Motorized Chair / Group I POV Scooter / Group II POV Scooter",
+    "seating_type": "captain seat / sling-solid / rehab seat",
+    "power_options": "None / Single Power Option / Multiple Power Option",
+    "specialty_evaluation_completed_by_pt_ot": false,
+    "ordered_accessories_hcpcs": [
+      {
+        "code": "E2361",
+        "description": "22NF Batteries",
+        "quantity": 2
+      }
+    ]
+  },
+  "home_environmental_assessment": {
+    "evaluation_date": "YYYY-MM-DD",
+    "residence_type": "Single Story / Multi Story / Apt-Condo / Mobile Home",
+    "interior_ramps_required": false,
+    "beneficiary_aware_of_modification_responsibility": false,
+    "independent_utilization_possible": false,
+    "caregiver_willing_to_assist_if_needed": false,
+    "factors_rendering_mobility_device_unusable": false,
+    "factors_details": "",
+    "demonstrated_usability_locations": {
+      "bathroom": { "accessible": false, "comments": "" },
+      "bedroom": { "accessible": false, "comments": "" },
+      "hallways": { "accessible": false, "comments": "" },
+      "kitchen": { "accessible": false, "comments": "" }
+    }
+  },
+  "prescribing_physician_provider": {
+    "provider_name": "",
+    "title_credentials": "",
+    "npi_number": "",
+    "upin_number": "",
+    "phone_number": "",
+    "fax_number": "",
+    "address": {
+      "street": "",
+      "city": "",
+      "state": "",
+      "zip_code": ""
+    },
+    "signature_on_file": false,
+    "date_signed": "YYYY-MM-DD"
+  }
+}

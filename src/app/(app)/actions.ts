@@ -727,6 +727,7 @@ export async function createPatient(
     const last_name = (form.get("last_name") as string)?.trim();
     const birth_date = (form.get("birth_date") as string)?.trim();
     const referral_source = (form.get("referral_source") as string)?.trim() || null;
+    const drive_folder_url = ((form.get("drive_folder_url") as string) || "").trim() || null;
     const payer_id = form.get("payer_id") as string;
     let assigned_rep_id = ((form.get("assigned_rep_id") as string) || "").trim() || null;
     const assigned_atp_id = ((form.get("assigned_atp_id") as string) || "").trim() || null;
@@ -756,12 +757,51 @@ export async function createPatient(
     }
     if (!patientId) return { error: "Patient creation failed with no error detail." };
 
+    // Optional Drive folder link (not part of the create RPC); set it after.
+    if (drive_folder_url) {
+      await supabase
+        .from("patients")
+        .update({ drive_folder_url })
+        .eq("id", patientId);
+    }
+
     revalidatePath("/", "layout");
     redirect(`/patients/${patientId}`);
   } catch (e) {
     if (isRedirectError(e)) throw e;
     const message = e instanceof Error ? e.message : "Unknown error creating patient.";
     return { error: message };
+  }
+}
+
+// =====================================================================
+// Patient: update the shared Drive folder link.
+// =====================================================================
+
+export type DriveFolderState = { error?: string; ok?: boolean } | null;
+
+export async function updatePatientDriveFolder(
+  patientId: string,
+  url: string,
+): Promise<DriveFolderState> {
+  try {
+    const supabase = await getSupabaseServer();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return { error: "You must be signed in." };
+
+    const trimmed = url.trim();
+    const { error } = await supabase
+      .from("patients")
+      .update({ drive_folder_url: trimmed || null })
+      .eq("id", patientId);
+    if (error) return { error: error.message };
+
+    revalidatePath(`/patients/${patientId}`);
+    return { ok: true };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Failed to update link." };
   }
 }
 

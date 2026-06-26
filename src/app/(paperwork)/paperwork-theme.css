@@ -1,0 +1,139 @@
+/* TRON visual theme, scoped to the Paperwork AI route group. */
+
+.tron {
+  --tron-bg: #04080f;
+  --tron-panel: #0a1622;
+  --tron-line: #0e3a4f;
+  --tron-cyan: #2ef2ff;
+  --tron-cyan-dim: #0bb6c9;
+  --tron-amber: #ffcc33;
+  --tron-text: #cfeefc;
+  --tron-muted: #5d7e90;
+  --tron-ok: #38ffb0;
+  --tron-bad: #ff4d6d;
+
+  min-height: 100vh;
+  color: var(--tron-text);
+  background-color: var(--tron-bg);
+  background-image:
+    linear-gradient(rgba(46, 242, 255, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(46, 242, 255, 0.06) 1px, transparent 1px);
+  background-size: 40px 40px;
+  font-family: var(--font-system-sans, "Segoe UI", system-ui, sans-serif);
+}
+
+.tron-glow {
+  text-shadow: 0 0 8px var(--tron-cyan), 0 0 18px rgba(46, 242, 255, 0.5);
+}
+
+.tron-panel {
+  background: linear-gradient(180deg, rgba(14, 30, 44, 0.9), rgba(6, 14, 22, 0.9));
+  border: 1px solid var(--tron-line);
+  border-radius: 12px;
+  box-shadow:
+    0 0 0 1px rgba(46, 242, 255, 0.08),
+    0 0 24px rgba(46, 242, 255, 0.08) inset;
+}
+
+.tron-panel-title {
+  color: var(--tron-cyan);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.tron-input {
+  background: rgba(2, 8, 14, 0.85);
+  border: 1px solid var(--tron-line);
+  color: var(--tron-text);
+  border-radius: 8px;
+  padding: 0.55rem 0.75rem;
+  width: 100%;
+  outline: none;
+}
+.tron-input:focus {
+  border-color: var(--tron-cyan);
+  box-shadow: 0 0 0 1px var(--tron-cyan), 0 0 12px rgba(46, 242, 255, 0.4);
+}
+.tron-input::placeholder {
+  color: var(--tron-muted);
+}
+
+.tron-btn {
+  background: rgba(46, 242, 255, 0.08);
+  border: 1px solid var(--tron-cyan-dim);
+  color: var(--tron-cyan);
+  border-radius: 8px;
+  padding: 0.5rem 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: box-shadow 0.15s ease, background 0.15s ease;
+}
+.tron-btn:hover:not(:disabled) {
+  background: rgba(46, 242, 255, 0.16);
+  box-shadow: 0 0 14px rgba(46, 242, 255, 0.45);
+}
+.tron-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.tron-chip {
+  border: 1px solid var(--tron-line);
+  border-radius: 999px;
+  padding: 0.15rem 0.6rem;
+  font-size: 0.7rem;
+  color: var(--tron-muted);
+}
+
+.tron-link {
+  color: var(--tron-cyan);
+  text-decoration: none;
+  border-bottom: 1px dashed rgba(46, 242, 255, 0.5);
+}
+.tron-link:hover {
+  text-shadow: 0 0 8px var(--tron-cyan);
+}
+
+.tron-ok {
+  color: var(--tron-ok);
+}
+.tron-bad {
+  color: var(--tron-bad);
+}
+
+.tron-tile {
+  border: 1px solid var(--tron-line);
+  border-radius: 10px;
+  background: rgba(2, 8, 14, 0.7);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.tron-tile:hover {
+  border-color: var(--tron-cyan-dim);
+  box-shadow: 0 0 12px rgba(46, 242, 255, 0.25);
+}
+.tron-tile-selected {
+  border-color: var(--tron-cyan);
+  box-shadow: 0 0 16px rgba(46, 242, 255, 0.5);
+}
+
+.tron-dropzone {
+  border: 1.5px dashed var(--tron-line);
+  border-radius: 10px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.tron-dropzone-active {
+  border-color: var(--tron-cyan);
+  background: rgba(46, 242, 255, 0.06);
+}
+
+.tron-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.tron-scroll::-webkit-scrollbar-thumb {
+  background: var(--tron-line);
+  border-radius: 8px;
+}
