@@ -133,6 +133,105 @@ export function injectPageStyle(html: string): string {
 }
 
 /**
+ * Copies a form control's visual box (font, size, borders/underline, padding)
+ * onto its flattened text replacement so it looks identical to the live field.
+ */
+function copyFieldStyle(
+  win: Window,
+  from: HTMLElement,
+  to: HTMLElement,
+  multiline: boolean,
+): void {
+  const cs = win.getComputedStyle(from);
+  const s = to.style;
+  s.boxSizing = "content-box";
+  s.display = "inline-block";
+  s.width = cs.width;
+  s.fontFamily = cs.fontFamily;
+  s.fontSize = cs.fontSize;
+  s.fontWeight = cs.fontWeight;
+  s.fontStyle = cs.fontStyle;
+  s.letterSpacing = cs.letterSpacing;
+  s.lineHeight = "normal";
+  s.color = cs.color;
+  s.textAlign = cs.textAlign;
+  s.padding = cs.padding;
+  s.margin = cs.margin;
+  s.background = cs.backgroundColor;
+  s.borderTop = `${cs.borderTopWidth} ${cs.borderTopStyle} ${cs.borderTopColor}`;
+  s.borderRight = `${cs.borderRightWidth} ${cs.borderRightStyle} ${cs.borderRightColor}`;
+  s.borderBottom = `${cs.borderBottomWidth} ${cs.borderBottomStyle} ${cs.borderBottomColor}`;
+  s.borderLeft = `${cs.borderLeftWidth} ${cs.borderLeftStyle} ${cs.borderLeftColor}`;
+  if (multiline) {
+    s.minHeight = cs.height;
+    s.height = "auto";
+    s.whiteSpace = "pre-wrap";
+    s.overflowWrap = "anywhere";
+    s.verticalAlign = "top";
+  } else {
+    s.minHeight = cs.height;
+    s.whiteSpace = "pre";
+    s.verticalAlign = "baseline";
+  }
+}
+
+/**
+ * Replaces every <input>/<textarea>/<select> in the (throwaway export) document
+ * with a styled <span>/<div> holding its current value. html2canvas renders
+ * text inside real form controls with a wrong vertical offset (it sinks below
+ * the field and clips); static text rasterises exactly as shown. The live
+ * preview and the saved HTML are unaffected — this only runs in the export
+ * iframe right before capture.
+ */
+function flattenFormFields(doc: Document): void {
+  const win = doc.defaultView;
+  if (!win) return;
+
+  doc.querySelectorAll("input").forEach((el) => {
+    const input = el as HTMLInputElement;
+    const type = (input.getAttribute("type") || "text").toLowerCase();
+    const span = doc.createElement("span");
+    if (type === "checkbox" || type === "radio") {
+      const checked = input.checked || input.hasAttribute("checked");
+      span.textContent = checked
+        ? type === "radio"
+          ? "\u25C9"
+          : "\u2611"
+        : type === "radio"
+          ? "\u25CB"
+          : "\u2610";
+      span.style.fontSize = "13px";
+      span.style.lineHeight = "normal";
+      span.style.verticalAlign = "middle";
+      span.style.margin = win.getComputedStyle(input).margin;
+      input.replaceWith(span);
+      return;
+    }
+    const val = input.value || input.getAttribute("value") || "";
+    span.textContent = val.length ? val : "\u00A0";
+    copyFieldStyle(win, input, span, false);
+    input.replaceWith(span);
+  });
+
+  doc.querySelectorAll("textarea").forEach((el) => {
+    const ta = el as HTMLTextAreaElement;
+    const div = doc.createElement("div");
+    div.textContent = ta.value || ta.textContent || "\u00A0";
+    copyFieldStyle(win, ta, div, true);
+    ta.replaceWith(div);
+  });
+
+  doc.querySelectorAll("select").forEach((el) => {
+    const sel = el as HTMLSelectElement;
+    const span = doc.createElement("span");
+    const opt = sel.options[sel.selectedIndex];
+    span.textContent = opt ? opt.text : "\u00A0";
+    copyFieldStyle(win, sel, span, false);
+    sel.replaceWith(span);
+  });
+}
+
+/**
  * Splits the rendered body (height `totalCss`, in CSS px) into page-sized slices
  * whose cut lines fall in the gaps BETWEEN elements, so no row/field/line is
  * split across a page boundary. Greedy: each page takes up to `pageHeightCss`,
@@ -210,6 +309,11 @@ export async function htmlToPdfBlob(html: string): Promise<Blob> {
     doc.close();
     // Give the iframe a moment to lay out fonts/images before rasterising.
     await new Promise((r) => setTimeout(r, 400));
+
+    // Swap form controls for static text so html2canvas doesn't sink/clip the
+    // typed values (its known input-rendering bug). Then let it reflow.
+    flattenFormFields(doc);
+    await new Promise((r) => setTimeout(r, 50));
 
     // Grow the iframe to the full content height so multi-page forms are fully
     // captured (html2canvas renders the body's complete scroll height).
