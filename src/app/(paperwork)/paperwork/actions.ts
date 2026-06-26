@@ -1,7 +1,11 @@
 "use server";
 
 import { getSupabaseServer } from "@/lib/supabase/server";
-import { evaluateCompleteness } from "@/lib/paperwork/schema";
+import {
+  evaluateCompleteness,
+  getValueAtPath,
+  setValueAtPath,
+} from "@/lib/paperwork/schema";
 import type {
   Completeness,
 } from "@/lib/paperwork/schema";
@@ -28,29 +32,83 @@ async function requireAuthedClient() {
   return { supabase, user };
 }
 
+/** True when a leaf string is absent/blank and should be auto-seeded. */
+function isBlankLeaf(value: unknown): boolean {
+  return value === null || value === undefined || value === "";
+}
+
+/**
+ * Seeds the patient's demographic first/last name from the PatientOS patient
+ * record into the structured JSON whenever those fields are still blank, so the
+ * name is pre-filled on the checklist and carried onto filled documents. Returns
+ * the (possibly updated) data and whether anything changed.
+ */
+function seedPatientName(
+  data: PaperworkPatientData,
+  firstName: string | null | undefined,
+  lastName: string | null | undefined,
+): { data: PaperworkPatientData; changed: boolean } {
+  let next = data;
+  let changed = false;
+  const seed = (path: string, value: string | null | undefined) => {
+    const trimmed = (value ?? "").trim();
+    if (!trimmed) return;
+    if (isBlankLeaf(getValueAtPath(next, path))) {
+      next = setValueAtPath(next, path, trimmed);
+      changed = true;
+    }
+  };
+  seed("patient_demographics.first_name", firstName);
+  seed("patient_demographics.last_name", lastName);
+  return { data: next, changed };
+}
+
 /** Loads the structured JSON + filled documents for one patient. */
 export async function loadPatientPaperwork(
   patientId: string,
 ): Promise<ActionResult<PatientPaperwork>> {
   try {
-    const { supabase } = await requireAuthedClient();
+    const { supabase, user } = await requireAuthedClient();
 
-    const [{ data: row }, { data: docs, error: docErr }] = await Promise.all([
-      supabase
-        .from("paperwork_patient_data")
-        .select("data")
-        .eq("patient_id", patientId)
-        .maybeSingle(),
-      supabase
-        .from("paperwork_documents")
-        .select("*")
-        .eq("patient_id", patientId)
-        .order("updated_at", { ascending: false }),
-    ]);
+    const [{ data: row }, { data: docs, error: docErr }, { data: patient }] =
+      await Promise.all([
+        supabase
+          .from("paperwork_patient_data")
+          .select("data")
+          .eq("patient_id", patientId)
+          .maybeSingle(),
+        supabase
+          .from("paperwork_documents")
+          .select("*")
+          .eq("patient_id", patientId)
+          .order("updated_at", { ascending: false }),
+        supabase
+          .from("patients")
+          .select("first_name, last_name")
+          .eq("id", patientId)
+          .maybeSingle(),
+      ]);
 
     if (docErr) return { ok: false, error: docErr.message };
 
-    const data = ((row?.data as PaperworkPatientData) ?? {}) as PaperworkPatientData;
+    const existing = ((row?.data as PaperworkPatientData) ?? {}) as PaperworkPatientData;
+    const { data, changed } = seedPatientName(
+      existing,
+      patient?.first_name,
+      patient?.last_name,
+    );
+
+    // Persist the seeded name so the fill worker (which reads from the DB) also
+    // gets it. Best-effort: a write failure shouldn't block viewing the page.
+    if (changed) {
+      await supabase
+        .from("paperwork_patient_data")
+        .upsert(
+          { patient_id: patientId, data, updated_by: user.id },
+          { onConflict: "patient_id" },
+        );
+    }
+
     return {
       ok: true,
       value: {
