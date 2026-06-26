@@ -371,7 +371,9 @@ export function emptyPatientData(): PaperworkPatientData {
     }
     if (typeof node === "string") return "";
     if (typeof node === "number") return null;
-    if (typeof node === "boolean") return false;
+    // Yes/No fields start unrecorded (null) so the checklist shows a red ✗
+    // until someone explicitly picks Yes or No.
+    if (typeof node === "boolean") return null;
     return null;
   };
   return blank(SCHEMA_FOR_PROMPT) as PaperworkPatientData;

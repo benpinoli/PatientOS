@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import type { PaperworkDocument, PaperworkTemplate } from "@/lib/db-types";
 import { saveFilledDocument } from "./actions";
+import { readApiJson } from "./api";
 
 export function TemplatesPanel({
   patientId,
@@ -46,12 +47,11 @@ export function TemplatesPanel({
         method: "POST",
         body: form,
       });
-      const json = await res.json();
-      if (!res.ok) {
-        setError(json.error ?? "Template conversion failed.");
-        return;
-      }
-      const tmpl = json.template as PaperworkTemplate;
+      const json = await readApiJson<{ template: PaperworkTemplate }>(
+        res,
+        "Template conversion",
+      );
+      const tmpl = json.template;
       onTemplatesChange([...templates, tmpl].sort((a, b) => a.name.localeCompare(b.name)));
       setUploadOpen(false);
       setUploadName("");
@@ -74,12 +74,11 @@ export function TemplatesPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ patient_id: patientId, template_id: selectedId }),
       });
-      const json = await res.json();
-      if (!res.ok) {
-        setError(json.error ?? "Fill failed.");
-        return;
-      }
-      const doc = json.document as PaperworkDocument;
+      const json = await readApiJson<{ document: PaperworkDocument }>(
+        res,
+        "Fill",
+      );
+      const doc = json.document;
       const next = documents.filter((d) => d.template_id !== doc.template_id);
       onDocumentsChange([doc, ...next]);
       setEditing(false);

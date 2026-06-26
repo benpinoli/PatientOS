@@ -169,7 +169,7 @@ function FieldRow({
   listBuffers: Record<string, string>;
   onText: (v: string) => void;
   onNumber: (v: number | null) => void;
-  onBoolean: (v: boolean) => void;
+  onBoolean: (v: boolean | null) => void;
   onListBuffer: (v: string) => void;
   onListBlur: () => void;
 }) {
@@ -187,13 +187,27 @@ function FieldRow({
       <label className="block w-full">
         <span className="text-[11px] text-[var(--tron-muted)]">{field.label}</span>
         {field.kind === "boolean" ? (
-          <div className="mt-0.5">
-            <input
-              type="checkbox"
-              checked={Boolean(value)}
-              onChange={(e) => onBoolean(e.target.checked)}
-              className="h-4 w-4 accent-[var(--tron-cyan)]"
-            />
+          <div className="mt-0.5 flex gap-2">
+            <button
+              type="button"
+              aria-pressed={value === true}
+              onClick={() => onBoolean(value === true ? null : true)}
+              className={
+                "tron-toggle text-xs " + (value === true ? "tron-toggle-yes-on" : "")
+              }
+            >
+              Yes
+            </button>
+            <button
+              type="button"
+              aria-pressed={value === false}
+              onClick={() => onBoolean(value === false ? null : false)}
+              className={
+                "tron-toggle text-xs " + (value === false ? "tron-toggle-no-on" : "")
+              }
+            >
+              No
+            </button>
           </div>
         ) : field.kind === "number" ? (
           <input

@@ -20,7 +20,6 @@ type GeminiPart =
   | { inlineData: { data: string; mimeType: string } };
 
 const DEFAULT_MODEL = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
-const PRO_MODEL = process.env.GEMINI_MODEL_PRO ?? "gemini-2.5-pro";
 
 let client: GoogleGenAI | null = null;
 
@@ -77,7 +76,9 @@ export async function extractPatientJson(input: {
     "Rules:",
     "- Return ONLY JSON. No prose, no code fences.",
     "- Use an empty string \"\" for unknown text fields, null for unknown numbers,",
-    "  and [] for unknown lists. Do not invent values.",
+    "  null for unknown yes/no (boolean) fields, and [] for unknown lists.",
+    "  Only return true/false for a yes/no field when the source clearly states it.",
+    "  Do not invent values.",
     "- For enum fields, choose one of the slash-delimited options shown in the schema",
     "  (return just the chosen value, not the option list).",
     "- Dates must be YYYY-MM-DD.",
@@ -127,7 +128,9 @@ export async function templateToHtml(input: {
   ].join("\n");
 
   const res = await ai.models.generateContent({
-    model: PRO_MODEL,
+    // Flash (not pro) to stay under Amplify's ~30s SSR response limit. Pro is
+    // markedly slower and reliably times out when generating a full HTML form.
+    model: DEFAULT_MODEL,
     contents: [
       {
         role: "user",

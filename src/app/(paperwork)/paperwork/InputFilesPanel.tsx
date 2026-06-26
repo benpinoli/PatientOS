@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import type { PaperworkPatientData } from "@/lib/db-types";
 import { PdfThumbnail } from "./PdfThumbnail";
+import { readApiJson } from "./api";
 
 export function InputFilesPanel({
   patientId,
@@ -49,12 +50,11 @@ export function InputFilesPanel({
         method: "POST",
         body: form,
       });
-      const json = await res.json();
-      if (!res.ok) {
-        setError(json.error ?? "Extraction failed.");
-        return;
-      }
-      onExtracted(json.data as PaperworkPatientData);
+      const json = await readApiJson<{ data: PaperworkPatientData }>(
+        res,
+        "Extraction",
+      );
+      onExtracted(json.data);
       setText("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Extraction failed.");
