@@ -11,6 +11,7 @@ import {
   deleteTemplate,
   saveFilledDocument,
   saveLogo,
+  updateLogo,
 } from "./actions";
 import { fileToBase64Payload, runPaperworkJob } from "./api";
 import { embedLogo } from "./branding";
@@ -116,10 +117,17 @@ export function TemplatesPanel({
   const [busyLogo, setBusyLogo] = useState(false);
   const [confirmDeleteLogo, setConfirmDeleteLogo] = useState<PaperworkLogo | null>(null);
   const [deletingLogo, setDeletingLogo] = useState(false);
+  const [companyDraft, setCompanyDraft] = useState("");
+  const [savingCompany, setSavingCompany] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const logoRef = useRef<HTMLInputElement>(null);
 
   const selectedLogo = logos.find((l) => l.id === logoId) ?? null;
+
+  // Keep the editable company-name draft in sync with the selected logo.
+  useEffect(() => {
+    setCompanyDraft(selectedLogo?.company_name ?? "");
+  }, [selectedLogo?.id, selectedLogo?.company_name]);
 
   const selectedDoc = documents.find((d) => d.template_id === selectedId) ?? null;
   const selectedTemplate = templates.find((t) => t.id === selectedId) ?? null;
@@ -255,6 +263,21 @@ export function TemplatesPanel({
     } finally {
       setBusyLogo(false);
     }
+  };
+
+  const saveCompanyName = async () => {
+    if (!selectedLogo) return;
+    setSavingCompany(true);
+    setError(null);
+    const result = await updateLogo(selectedLogo.id, companyDraft);
+    setSavingCompany(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    onLogosChange(
+      logos.map((l) => (l.id === result.value.id ? result.value : l)),
+    );
   };
 
   const confirmDeleteLogoNow = async () => {
@@ -398,10 +421,27 @@ export function TemplatesPanel({
             )}
           </div>
 
-          {selectedLogo?.company_name && !logoUploadOpen && (
-            <p className="text-[11px] text-[var(--tron-muted)]">
-              Company name on form: <span className="tron-glow">{selectedLogo.company_name}</span>
-            </p>
+          {selectedLogo && !logoUploadOpen && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-[var(--tron-muted)]">Company name:</span>
+              <input
+                className="tron-input max-w-56 text-xs"
+                placeholder="Shown as the title on the form"
+                value={companyDraft}
+                onChange={(e) => setCompanyDraft(e.target.value)}
+              />
+              <button
+                className="tron-btn text-xs"
+                type="button"
+                onClick={saveCompanyName}
+                disabled={
+                  savingCompany ||
+                  companyDraft.trim() === (selectedLogo.company_name ?? "").trim()
+                }
+              >
+                {savingCompany ? "Saving…" : "Save name"}
+              </button>
+            </div>
           )}
 
           {logoUploadOpen && (
@@ -491,7 +531,10 @@ export function TemplatesPanel({
                 </label>
               )}
               {hasPreview ? (
-                <TemplatePreview html={embedLogo(t.html, t.logo_data_uri)} name={t.name} />
+                <TemplatePreview
+                  html={embedLogo(t.html, t.logo_data_uri, t.logo_company_name)}
+                  name={t.name}
+                />
               ) : (
                 <div
                   className="flex w-full items-center justify-center rounded bg-white text-3xl"

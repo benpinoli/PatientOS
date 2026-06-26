@@ -174,6 +174,26 @@ export async function saveLogo(
   }
 }
 
+/** Updates the company/organization name tied to an existing logo. */
+export async function updateLogo(
+  logoId: string,
+  companyName: string | null,
+): Promise<ActionResult<PaperworkLogo>> {
+  try {
+    const { supabase } = await requireAuthedClient();
+    const { data, error } = await supabase
+      .from("paperwork_logos")
+      .update({ company_name: companyName?.trim() || null })
+      .eq("id", logoId)
+      .select("*")
+      .single();
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, value: data as PaperworkLogo };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Failed to update logo." };
+  }
+}
+
 /** Deletes a branding logo from the shared library. */
 export async function deleteLogo(logoId: string): Promise<ActionResult<true>> {
   try {
