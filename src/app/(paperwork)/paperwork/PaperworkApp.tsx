@@ -133,6 +133,11 @@ export function PaperworkApp({
             <InputFilesPanel patientId={selectedId} onExtracted={onExtracted} />
             <TemplatesPanel
               patientId={selectedId}
+              patientLabel={
+                selectedPatient
+                  ? `${selectedPatient.last_name}, ${selectedPatient.first_name}`
+                  : null
+              }
               templates={templates}
               onTemplatesChange={setTemplates}
               documents={documents}

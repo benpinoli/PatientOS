@@ -169,7 +169,11 @@ async function extractPatientJson({ files, text }) {
     '- Use an empty string "" for unknown text fields, null for unknown numbers,',
     "  null for unknown yes/no (boolean) fields, and [] for unknown lists.",
     "  Only return true/false for a yes/no field when the source clearly states it.",
-    "  Do not invent values.",
+    "- IMPORTANT: Prefer leaving a field blank/empty over guessing. Only populate a",
+    "  field when the source clearly and explicitly provides the value. Never infer,",
+    "  approximate, fabricate, or use outside/general knowledge. When in any doubt,",
+    "  leave the field empty.",
+    "- Never invent dates. Only output a date that explicitly appears in the source.",
     "- For enum fields, choose one of the slash-delimited options shown in the schema",
     "  (return just the chosen value, not the option list).",
     "- Dates must be YYYY-MM-DD.",
@@ -220,13 +224,32 @@ async function templateToHtml({ file, name }) {
 }
 
 async function fillTemplate({ templateHtml, requiredFields, patientData }) {
+  // Real date (clinic timezone) so the model never hallucinates "today".
+  const today = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Los_Angeles",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+
   const instruction = [
     "You fill a blank HTML form using a patient's structured JSON data.",
     "Return the SAME HTML document, unchanged in structure and styling, but with each",
     "editable field pre-populated from the patient JSON:",
     "- For <input>/<textarea>, set the value/text to the matching data.",
     "- For checkboxes/radios, add the checked attribute when the data is true/selected.",
-    "- Leave a field blank if the data is unknown; never invent values.",
+    `TODAY'S DATE is ${today} (YYYY-MM-DD).`,
+    "- For fields that represent the date this form is completed or signed TODAY",
+    "  (labels like 'Date', 'Today's Date', 'Date Signed', 'Signature Date'), fill",
+    "  them with TODAY'S DATE above.",
+    "- Do NOT use today's date for clinical dates such as date of birth, face-to-face",
+    "  visit date, prescription date, or home evaluation date — those come ONLY from",
+    "  the patient JSON.",
+    "- IMPORTANT: Prefer leaving a field BLANK over guessing. Only fill a field when",
+    "  the patient JSON (or, for a today's-date field, the date above) clearly",
+    "  provides the value. Never infer, approximate, fabricate, or use outside",
+    "  knowledge. A blank field is strongly preferred over a wrong or invented value.",
+    "- Never invent dates of any kind.",
     "Use the field mapping (required_fields with json_path) as the primary guide, and",
     "fall back to matching by label when json_path is null.",
     "Return ONLY the HTML document. No prose, no code fences.",

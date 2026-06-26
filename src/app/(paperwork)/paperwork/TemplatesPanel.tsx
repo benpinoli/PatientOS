@@ -1,23 +1,69 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PaperworkDocument, PaperworkTemplate } from "@/lib/db-types";
 import { saveFilledDocument } from "./actions";
 import { fileToBase64Payload, runPaperworkJob } from "./api";
+import {
+  downloadBlob,
+  downloadDocsAsZip,
+  htmlToPdfBlob,
+  safePdfName,
+} from "./pdf";
 
 /** Filename without its extension, e.g. "CMS Face-to-Face.pdf" -> "CMS Face-to-Face". */
 function baseName(fileName: string): string {
   return fileName.replace(/\.[^./\\]+$/, "");
 }
 
+/** Scaled, non-interactive thumbnail of a template's HTML, filling its tile. */
+function TemplatePreview({ html, name }: { html: string; name: string }) {
+  const BASE = 740;
+  const ref = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(0.2);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const update = () => setScale(el.clientWidth / BASE);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  return (
+    <div
+      ref={ref}
+      className="relative w-full overflow-hidden rounded bg-white"
+      style={{ aspectRatio: "3 / 4" }}
+    >
+      <iframe
+        title={name}
+        sandbox=""
+        scrolling="no"
+        srcDoc={html}
+        className="pointer-events-none absolute left-0 top-0 origin-top-left border-0"
+        style={{
+          width: `${BASE}px`,
+          height: `${Math.round((BASE * 4) / 3)}px`,
+          transform: `scale(${scale})`,
+        }}
+      />
+    </div>
+  );
+}
+
 export function TemplatesPanel({
   patientId,
+  patientLabel,
   templates,
   onTemplatesChange,
   documents,
   onDocumentsChange,
 }: {
   patientId: string | null;
+  patientLabel?: string | null;
   templates: PaperworkTemplate[];
   onTemplatesChange: (next: PaperworkTemplate[]) => void;
   documents: PaperworkDocument[];
@@ -34,9 +80,56 @@ export function TemplatesPanel({
   const [editing, setEditing] = useState(false);
   const [editHtml, setEditHtml] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [downloadMsg, setDownloadMsg] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const selectedDoc = documents.find((d) => d.template_id === selectedId) ?? null;
+  const filledDocs = documents;
+  const busyDownload = downloadMsg !== null;
+
+  const togglePicked = (docId: string) => {
+    setPicked((prev) => {
+      const next = new Set(prev);
+      if (next.has(docId)) next.delete(docId);
+      else next.add(docId);
+      return next;
+    });
+  };
+
+  const downloadOne = async (doc: PaperworkDocument) => {
+    setDownloadMsg("Building PDF…");
+    setError(null);
+    try {
+      const blob = await htmlToPdfBlob(doc.filled_html);
+      downloadBlob(blob, safePdfName(doc.template_name ?? "document"));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not build the PDF.");
+    } finally {
+      setDownloadMsg(null);
+    }
+  };
+
+  const downloadPicked = async () => {
+    const chosen = filledDocs.filter((d) => picked.has(d.id));
+    if (chosen.length === 0) return;
+    const folder = (patientLabel?.trim() || "Patient") + " - Filled Forms";
+    setDownloadMsg(`Building ${chosen.length} PDF${chosen.length > 1 ? "s" : ""}…`);
+    setError(null);
+    try {
+      await downloadDocsAsZip(
+        chosen.map((d) => ({
+          name: d.template_name ?? "document",
+          html: d.filled_html,
+        })),
+        folder,
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not build the folder.");
+    } finally {
+      setDownloadMsg(null);
+    }
+  };
 
   const uploadTemplate = async () => {
     const file = fileRef.current?.files?.[0];
@@ -151,23 +244,56 @@ export function TemplatesPanel({
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         {templates.map((t) => {
-          const hasDoc = documents.some((d) => d.template_id === t.id);
+          const doc = documents.find((d) => d.template_id === t.id) ?? null;
+          const isSelected = selectedId === t.id;
+          const hasPreview = Boolean(t.html?.trim());
           return (
-            <button
+            <div
               key={t.id}
+              role="button"
+              tabIndex={0}
               onClick={() => {
                 setSelectedId(t.id);
                 setEditing(false);
               }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setSelectedId(t.id);
+                  setEditing(false);
+                }
+              }}
               className={
-                "tron-tile flex aspect-[3/4] flex-col items-center justify-center gap-1 p-2 text-center " +
-                (selectedId === t.id ? "tron-tile-selected" : "")
+                "tron-tile relative flex cursor-pointer flex-col gap-1 p-2 text-center " +
+                (isSelected ? "tron-tile-selected" : "")
               }
             >
-              <span className="text-2xl">🧾</span>
+              {doc && (
+                <label
+                  className="absolute right-1.5 top-1.5 z-10 flex items-center gap-1 rounded bg-black/55 px-1.5 py-0.5 text-[9px] text-white"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <input
+                    type="checkbox"
+                    checked={picked.has(doc.id)}
+                    onChange={() => togglePicked(doc.id)}
+                  />
+                  select
+                </label>
+              )}
+              {hasPreview ? (
+                <TemplatePreview html={t.html} name={t.name} />
+              ) : (
+                <div
+                  className="flex w-full items-center justify-center rounded bg-white text-3xl"
+                  style={{ aspectRatio: "3 / 4" }}
+                >
+                  🧾
+                </div>
+              )}
               <span className="px-1 text-[11px] text-[var(--tron-text)]">{t.name}</span>
-              {hasDoc && <span className="text-[9px] tron-ok">filled</span>}
-            </button>
+              {doc && <span className="text-[9px] tron-ok">filled</span>}
+            </div>
           );
         })}
         {templates.length === 0 && (
@@ -176,6 +302,33 @@ export function TemplatesPanel({
           </p>
         )}
       </div>
+
+      {filledDocs.length > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[var(--tron-line)] pt-3">
+          <span className="text-xs text-[var(--tron-muted)]">
+            {picked.size} of {filledDocs.length} filled selected
+          </span>
+          <button
+            className="tron-btn text-xs"
+            onClick={() =>
+              setPicked((prev) =>
+                prev.size === filledDocs.length
+                  ? new Set()
+                  : new Set(filledDocs.map((d) => d.id)),
+              )
+            }
+          >
+            {picked.size === filledDocs.length ? "Clear" : "Select all"}
+          </button>
+          <button
+            className="tron-btn text-xs"
+            onClick={downloadPicked}
+            disabled={picked.size === 0 || busyDownload}
+          >
+            {busyDownload ? downloadMsg : "Download selected as folder (.zip)"}
+          </button>
+        </div>
+      )}
 
       {error && <p className="mt-2 text-xs tron-bad">{error}</p>}
 
@@ -186,9 +339,18 @@ export function TemplatesPanel({
               {busyFill ? `Filling… ${fillElapsed}s` : selectedDoc ? "Re-fill from patient data" : "Fill from patient data"}
             </button>
             {selectedDoc && !editing && (
-              <button className="tron-btn text-xs" onClick={startEdit}>
-                Edit HTML
-              </button>
+              <>
+                <button
+                  className="tron-btn text-xs"
+                  onClick={() => downloadOne(selectedDoc)}
+                  disabled={busyDownload}
+                >
+                  {busyDownload ? downloadMsg : "Download PDF"}
+                </button>
+                <button className="tron-btn text-xs" onClick={startEdit}>
+                  Edit HTML
+                </button>
+              </>
             )}
             {editing && (
               <>
