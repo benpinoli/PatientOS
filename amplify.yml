@@ -15,6 +15,11 @@ frontend:
         - npm ci
     build:
       commands:
+        # Amplify exposes console env vars at build time but NOT to the SSR
+        # runtime (Lambda). Write the server-only vars into .env.production so
+        # Next.js loads them at runtime. NEXT_PUBLIC_* are inlined at build and
+        # don't need to be here.
+        - env | grep -E '^(GEMINI_API_KEY|GEMINI_MODEL|GEMINI_MODEL_PRO|SUPABASE_SERVICE_ROLE_KEY|SUPABASE_INTERNAL_URL)=' >> .env.production || true
         - npm run build
   artifacts:
     baseDirectory: .next
