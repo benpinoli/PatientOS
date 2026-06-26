@@ -157,7 +157,10 @@ function copyFieldStyle(
   s.textAlign = cs.textAlign;
   s.padding = cs.padding;
   s.margin = cs.margin;
-  s.background = cs.backgroundColor;
+  // Transparent, never the field's white fill: the replacement box is slightly
+  // taller than its text and overlaps the line above, so an opaque background
+  // would paint over the bottom of the label there. Forms sit on white anyway.
+  s.background = "transparent";
   s.borderTop = `${cs.borderTopWidth} ${cs.borderTopStyle} ${cs.borderTopColor}`;
   s.borderRight = `${cs.borderRightWidth} ${cs.borderRightStyle} ${cs.borderRightColor}`;
   s.borderBottom = `${cs.borderBottomWidth} ${cs.borderBottomStyle} ${cs.borderBottomColor}`;
