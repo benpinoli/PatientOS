@@ -157,6 +157,8 @@ export type PaperworkTemplate = {
   required_fields: TemplateRequiredField[];
   /** Branding logo (data URI) embedded into this template, if any. */
   logo_data_uri: string | null;
+  /** Company/organization name rendered next to the logo, if any. */
+  logo_company_name: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -167,6 +169,8 @@ export type PaperworkLogo = {
   id: string;
   name: string;
   data_uri: string;
+  /** Optional company/organization name shown next to the logo on forms. */
+  company_name: string | null;
   created_by: string | null;
   created_at: string;
 };

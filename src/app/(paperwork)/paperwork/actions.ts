@@ -88,6 +88,7 @@ export async function savePatientData(
 export async function saveLogo(
   name: string,
   dataUri: string,
+  companyName?: string | null,
 ): Promise<ActionResult<PaperworkLogo>> {
   try {
     if (!dataUri.startsWith("data:image/")) {
@@ -100,7 +101,12 @@ export async function saveLogo(
     const { supabase, user } = await requireAuthedClient();
     const { data, error } = await supabase
       .from("paperwork_logos")
-      .insert({ name: name.trim() || "Logo", data_uri: dataUri, created_by: user.id })
+      .insert({
+        name: name.trim() || "Logo",
+        data_uri: dataUri,
+        company_name: companyName?.trim() || null,
+        created_by: user.id,
+      })
       .select("*")
       .single();
     if (error) return { ok: false, error: error.message };

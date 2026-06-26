@@ -6,7 +6,12 @@ import type {
   PaperworkLogo,
   PaperworkTemplate,
 } from "@/lib/db-types";
-import { deleteTemplate, saveFilledDocument, saveLogo } from "./actions";
+import {
+  deleteLogo,
+  deleteTemplate,
+  saveFilledDocument,
+  saveLogo,
+} from "./actions";
 import { fileToBase64Payload, runPaperworkJob } from "./api";
 import { embedLogo } from "./branding";
 import {
@@ -105,7 +110,12 @@ export function TemplatesPanel({
   const [confirmDelete, setConfirmDelete] = useState<PaperworkTemplate | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [logoId, setLogoId] = useState<string>("");
+  const [logoUploadOpen, setLogoUploadOpen] = useState(false);
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoCompany, setLogoCompany] = useState("");
   const [busyLogo, setBusyLogo] = useState(false);
+  const [confirmDeleteLogo, setConfirmDeleteLogo] = useState<PaperworkLogo | null>(null);
+  const [deletingLogo, setDeletingLogo] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const logoRef = useRef<HTMLInputElement>(null);
 
@@ -176,6 +186,7 @@ export function TemplatesPanel({
           name: uploadName.trim(),
           file: filePayload,
           logoDataUri: selectedLogo?.data_uri ?? null,
+          logoCompanyName: selectedLogo?.company_name ?? null,
         },
         onElapsed: setUploadElapsed,
       });
@@ -217,12 +228,16 @@ export function TemplatesPanel({
     }
   };
 
-  const uploadLogo = async (file: File) => {
+  const saveNewLogo = async () => {
+    if (!logoFile) {
+      setError("Choose a logo image first.");
+      return;
+    }
     setBusyLogo(true);
     setError(null);
     try {
-      const dataUri = await fileToDataUri(file);
-      const result = await saveLogo(baseName(file.name), dataUri);
+      const dataUri = await fileToDataUri(logoFile);
+      const result = await saveLogo(baseName(logoFile.name), dataUri, logoCompany);
       if (!result.ok) {
         setError(result.error);
         return;
@@ -231,12 +246,31 @@ export function TemplatesPanel({
         [...logos, result.value].sort((a, b) => a.name.localeCompare(b.name)),
       );
       setLogoId(result.value.id);
+      setLogoUploadOpen(false);
+      setLogoFile(null);
+      setLogoCompany("");
+      if (logoRef.current) logoRef.current.value = "";
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not upload the logo.");
     } finally {
       setBusyLogo(false);
-      if (logoRef.current) logoRef.current.value = "";
     }
+  };
+
+  const confirmDeleteLogoNow = async () => {
+    if (!confirmDeleteLogo) return;
+    setDeletingLogo(true);
+    setError(null);
+    const result = await deleteLogo(confirmDeleteLogo.id);
+    setDeletingLogo(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    const deletedId = confirmDeleteLogo.id;
+    onLogosChange(logos.filter((l) => l.id !== deletedId));
+    if (logoId === deletedId) setLogoId("");
+    setConfirmDeleteLogo(null);
   };
 
   const confirmDeleteTemplate = async () => {
@@ -334,17 +368,26 @@ export function TemplatesPanel({
               {logos.map((l) => (
                 <option key={l.id} value={l.id}>
                   {l.name}
+                  {l.company_name ? ` — ${l.company_name}` : ""}
                 </option>
               ))}
             </select>
             <button
               className="tron-btn text-xs"
               type="button"
-              onClick={() => logoRef.current?.click()}
-              disabled={busyLogo}
+              onClick={() => setLogoUploadOpen((v) => !v)}
             >
-              {busyLogo ? "Uploading…" : "Upload logo"}
+              {logoUploadOpen ? "Cancel" : "Upload logo"}
             </button>
+            {selectedLogo && (
+              <button
+                className="tron-btn tron-bad text-xs"
+                type="button"
+                onClick={() => setConfirmDeleteLogo(selectedLogo)}
+              >
+                Delete logo
+              </button>
+            )}
             {selectedLogo && (
               // eslint-disable-next-line @next/next/no-img-element
               <img
@@ -354,6 +397,43 @@ export function TemplatesPanel({
               />
             )}
           </div>
+
+          {selectedLogo?.company_name && !logoUploadOpen && (
+            <p className="text-[11px] text-[var(--tron-muted)]">
+              Company name on form: <span className="tron-glow">{selectedLogo.company_name}</span>
+            </p>
+          )}
+
+          {logoUploadOpen && (
+            <div className="tron-tile space-y-2 p-2">
+              <div className="flex items-center gap-2">
+                <button
+                  className="tron-btn text-xs"
+                  type="button"
+                  onClick={() => logoRef.current?.click()}
+                >
+                  Choose image
+                </button>
+                <span className="truncate text-xs text-[var(--tron-muted)]">
+                  {logoFile ? logoFile.name : "No image chosen"}
+                </span>
+              </div>
+              <input
+                className="tron-input text-sm"
+                placeholder="Company name (shown next to the logo)"
+                value={logoCompany}
+                onChange={(e) => setLogoCompany(e.target.value)}
+              />
+              <button
+                className="tron-btn text-xs"
+                type="button"
+                onClick={saveNewLogo}
+                disabled={busyLogo}
+              >
+                {busyLogo ? "Saving…" : "Save logo"}
+              </button>
+            </div>
+          )}
           <input
             ref={logoRef}
             type="file"
@@ -361,7 +441,7 @@ export function TemplatesPanel({
             hidden
             onChange={(e) => {
               const f = e.target.files?.[0];
-              if (f) uploadLogo(f);
+              if (f) setLogoFile(f);
             }}
           />
 
@@ -554,6 +634,42 @@ export function TemplatesPanel({
                 disabled={deleting}
               >
                 {deleting ? "Deleting…" : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmDeleteLogo && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          onClick={() => !deletingLogo && setConfirmDeleteLogo(null)}
+        >
+          <div
+            className="tron-panel w-full max-w-sm p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="tron-panel-title mb-2">Delete logo?</h3>
+            <p className="text-sm text-[var(--tron-text)]">
+              Are you sure you want to delete the logo{" "}
+              <strong className="tron-glow">{confirmDeleteLogo.name}</strong> from
+              the shared library? Templates already created with it keep their
+              branding.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                className="tron-btn text-xs"
+                onClick={() => setConfirmDeleteLogo(null)}
+                disabled={deletingLogo}
+              >
+                Cancel
+              </button>
+              <button
+                className="tron-btn tron-bad text-xs"
+                onClick={confirmDeleteLogoNow}
+                disabled={deletingLogo}
+              >
+                {deletingLogo ? "Deleting…" : "Delete"}
               </button>
             </div>
           </div>
