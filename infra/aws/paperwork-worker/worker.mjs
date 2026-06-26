@@ -7,7 +7,7 @@
 //
 // Env:
 //   GEMINI_API_KEY   (required)
-//   GEMINI_MODEL     (optional, default gemini-2.5-flash)
+//   GEMINI_MODEL     (optional, default gemini-3.1-flash-lite)
 //   PGHOST           (default supabase-db)
 //   PGPORT           (default 5432)
 //   PGUSER           (default postgres)
@@ -19,7 +19,7 @@
 import pg from "pg";
 import { GoogleGenAI } from "@google/genai";
 
-const MODEL = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
+const MODEL = process.env.GEMINI_MODEL ?? "gemini-3.1-flash-lite";
 const POLL_MS = 1500;
 
 if (!process.env.GEMINI_API_KEY) {

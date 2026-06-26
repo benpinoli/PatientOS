@@ -32,7 +32,7 @@ Docker network and talks to Postgres directly (`supabase-db:5432`) as the
 # 2. Create the secret env file (NOT committed):
 sudo tee /opt/paperwork-worker/worker.env >/dev/null <<'EOF'
 GEMINI_API_KEY=YOUR_KEY_HERE
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-3.1-flash-lite
 EOF
 
 # 3. Build + start (reads POSTGRES_PASSWORD from the Supabase .env automatically):
@@ -51,7 +51,7 @@ the Supabase Postgres before the worker (or the app) is used.
 | Var | Source | Default |
 |---|---|---|
 | `GEMINI_API_KEY` | `worker.env` | — (required) |
-| `GEMINI_MODEL` | `worker.env` | `gemini-2.5-flash` |
+| `GEMINI_MODEL` | `worker.env` | `gemini-3.1-flash-lite` |
 | `POSTGRES_PASSWORD` | `/opt/choice-supabase/.env` | — (required) |
 | `POSTGRES_DB` | `/opt/choice-supabase/.env` | `postgres` |
 | `PGHOST` | compose | `supabase-db` |
