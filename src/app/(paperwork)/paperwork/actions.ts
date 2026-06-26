@@ -316,6 +316,47 @@ export async function deleteJsonTemplate(id: string): Promise<ActionResult<true>
   }
 }
 
+/**
+ * Records one download for each given document and returns the updated
+ * per-document counts plus the new global all-time total. A document only counts
+ * as "filled" once it has been downloaded, so the UI calls this after a PDF
+ * (single or each one inside a folder/zip) is actually saved on the user's end.
+ */
+export async function recordPaperworkDownloads(
+  documentIds: string[],
+): Promise<ActionResult<{ counts: Record<string, number>; total: number }>> {
+  try {
+    if (documentIds.length === 0) {
+      return { ok: true, value: { counts: {}, total: 0 } };
+    }
+    const { supabase } = await requireAuthedClient();
+    const { data, error } = await supabase.rpc("record_paperwork_downloads", {
+      p_doc_ids: documentIds,
+    });
+    if (error) return { ok: false, error: error.message };
+
+    const rows = (data ?? []) as Array<{
+      document_id: string | null;
+      download_count: number | null;
+      total_downloads: number | string | null;
+    }>;
+    const counts: Record<string, number> = {};
+    let total = 0;
+    for (const r of rows) {
+      total = Number(r.total_downloads ?? total);
+      if (r.document_id && r.download_count != null) {
+        counts[r.document_id] = r.download_count;
+      }
+    }
+    return { ok: true, value: { counts, total } };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Failed to record download.",
+    };
+  }
+}
+
 /** Saves user edits to a filled document's HTML. */
 export async function saveFilledDocument(
   documentId: string,

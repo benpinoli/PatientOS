@@ -25,6 +25,7 @@ export default async function PaperworkPage() {
     { data: logos },
     { data: jsonTemplates },
     { data: patientData },
+    { data: stats },
     payerTypes,
   ] = await Promise.all([
     supabase
@@ -38,8 +39,13 @@ export default async function PaperworkPage() {
       .select("*")
       .order("name", { ascending: true }),
     supabase.from("paperwork_patient_data").select("patient_id, data"),
+    supabase.from("paperwork_stats").select("total_downloads").maybeSingle(),
     fetchPayerTypes(supabase),
   ]);
+
+  const totalDownloads = Number(
+    (stats as { total_downloads: number | string | null } | null)?.total_downloads ?? 0,
+  );
 
   const jsonTpls = (jsonTemplates ?? []) as PaperworkJsonTemplate[];
 
@@ -90,6 +96,7 @@ export default async function PaperworkPage() {
       logos={(logos ?? []) as PaperworkLogo[]}
       jsonTemplates={jsonTpls}
       payerTypes={payerTypes}
+      initialTotalDownloads={totalDownloads}
     />
   );
 }

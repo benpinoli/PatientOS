@@ -187,6 +187,8 @@ export type PaperworkDocument = {
   template_name: string | null;
   filled_html: string;
   status: PaperworkDocumentStatus;
+  /** How many times this patient+template PDF has actually been downloaded. */
+  download_count: number;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -235,6 +237,12 @@ export type PaperworkJob = {
   updated_at: string;
 };
 
+/** Single-row global counter of every paperwork PDF downloaded, ever. */
+export type PaperworkStats = {
+  id: boolean;
+  total_downloads: number;
+};
+
 // Minimal `Database` shape so the supabase-js generics know our tables.
 export type Database = {
   public: {
@@ -254,6 +262,7 @@ export type Database = {
       paperwork_documents: { Row: PaperworkDocument; Insert: Partial<PaperworkDocument> & { patient_id: string }; Update: Partial<PaperworkDocument> };
       paperwork_source_files: { Row: PaperworkSourceFile; Insert: Partial<PaperworkSourceFile> & { patient_id: string; storage_path: string; filename: string }; Update: Partial<PaperworkSourceFile> };
       paperwork_jobs: { Row: PaperworkJob; Insert: Partial<PaperworkJob> & { kind: PaperworkJobKind }; Update: Partial<PaperworkJob> };
+      paperwork_stats: { Row: PaperworkStats; Insert: Partial<PaperworkStats>; Update: Partial<PaperworkStats> };
     };
     Views: Record<string, never>;
     Functions: {
@@ -266,6 +275,14 @@ export type Database = {
           p_task_label?: string | null;
         };
         Returns: void;
+      };
+      record_paperwork_downloads: {
+        Args: { p_doc_ids: string[] };
+        Returns: {
+          document_id: string | null;
+          download_count: number | null;
+          total_downloads: number;
+        }[];
       };
     };
     Enums: Record<string, never>;

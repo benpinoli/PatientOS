@@ -59,12 +59,14 @@ export function PaperworkApp({
   logos: initialLogos,
   jsonTemplates: initialJsonTemplates,
   payerTypes,
+  initialTotalDownloads,
 }: {
   patients: PatientLite[];
   templates: PaperworkTemplate[];
   logos: PaperworkLogo[];
   jsonTemplates: PaperworkJsonTemplate[];
   payerTypes: PayerTypeRecord[];
+  initialTotalDownloads: number;
 }) {
   const [tab, setTab] = useState<"patients" | "templates">("patients");
   const [query, setQuery] = useState("");
@@ -77,6 +79,7 @@ export function PaperworkApp({
   const [jsonTemplates, setJsonTemplates] =
     useState<PaperworkJsonTemplate[]>(initialJsonTemplates);
   const [dataVersion, setDataVersion] = useState(0);
+  const [totalDownloads, setTotalDownloads] = useState(initialTotalDownloads);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -133,8 +136,8 @@ export function PaperworkApp({
 
   return (
     <div className="space-y-5">
-      {/* Top tabs */}
-      <div className="flex gap-2">
+      {/* Top tabs + global all-time download counter */}
+      <div className="flex flex-wrap items-center gap-2">
         <button
           className={"tron-btn text-sm " + (tab === "patients" ? "tron-tile-selected" : "")}
           onClick={() => setTab("patients")}
@@ -147,6 +150,15 @@ export function PaperworkApp({
         >
           JSON Templates
         </button>
+        <span
+          className="ml-auto flex items-center gap-2 rounded-lg border border-[var(--tron-line)] px-3 py-1.5 text-xs"
+          title="Total PDFs downloaded by everyone, all time"
+        >
+          <span className="text-[var(--tron-muted)]">PDFs downloaded (all time)</span>
+          <span className="text-base font-bold tron-glow">
+            {totalDownloads.toLocaleString()}
+          </span>
+        </span>
       </div>
 
       {tab === "templates" ? (
@@ -228,6 +240,7 @@ export function PaperworkApp({
                   onLogosChange={setLogos}
                   documents={documents}
                   onDocumentsChange={setDocuments}
+                  onTotalDownloadsChange={setTotalDownloads}
                 />
               </div>
 

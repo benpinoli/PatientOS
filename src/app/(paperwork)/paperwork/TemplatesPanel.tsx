@@ -9,6 +9,7 @@ import type {
 import {
   deleteLogo,
   deleteTemplate,
+  recordPaperworkDownloads,
   saveFilledDocument,
   saveLogo,
   updateLogo,
@@ -85,6 +86,7 @@ export function TemplatesPanel({
   onLogosChange,
   documents,
   onDocumentsChange,
+  onTotalDownloadsChange,
 }: {
   patientId: string | null;
   patientLabel?: string | null;
@@ -94,6 +96,7 @@ export function TemplatesPanel({
   onLogosChange: (next: PaperworkLogo[]) => void;
   documents: PaperworkDocument[];
   onDocumentsChange: (next: PaperworkDocument[]) => void;
+  onTotalDownloadsChange: (total: number) => void;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -197,12 +200,31 @@ export function TemplatesPanel({
     return doc.filled_html;
   };
 
+  /**
+   * Records actual downloads (one per document) so a document only counts as
+   * "filled" once its PDF is saved on the user's end, and bumps the global
+   * all-time counter. Best-effort: a failure here doesn't undo the download.
+   */
+  const recordDownloads = async (docIds: string[]) => {
+    if (docIds.length === 0) return;
+    const result = await recordPaperworkDownloads(docIds);
+    if (!result.ok) return;
+    const { counts, total } = result.value;
+    onTotalDownloadsChange(total);
+    onDocumentsChange(
+      documents.map((d) =>
+        counts[d.id] != null ? { ...d, download_count: counts[d.id] } : d,
+      ),
+    );
+  };
+
   const downloadOne = async (doc: PaperworkDocument) => {
     setDownloadMsg("Building PDF…");
     setError(null);
     try {
       const blob = await htmlToPdfBlob(htmlForDoc(doc));
       downloadBlob(blob, safePdfName(doc.template_name ?? "document"));
+      await recordDownloads([doc.id]);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not build the PDF.");
     } finally {
@@ -240,6 +262,7 @@ export function TemplatesPanel({
         })),
         folder,
       );
+      await recordDownloads(chosen.map((d) => d.id));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not build the folder.");
     } finally {
@@ -614,7 +637,11 @@ export function TemplatesPanel({
                 </div>
               )}
               <span className="px-1 text-[11px] text-[var(--tron-text)]">{t.name}</span>
-              {doc && <span className="text-[9px] tron-ok">filled</span>}
+              {doc && doc.download_count > 0 && (
+                <span className="text-[9px] tron-ok">
+                  filled ×{doc.download_count}
+                </span>
+              )}
             </div>
           );
         })}
