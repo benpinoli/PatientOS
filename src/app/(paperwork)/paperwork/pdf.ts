@@ -69,11 +69,25 @@ const RENDER_WIDTH = 816;
  */
 export const PAGE_STYLE = `
   @page { size: letter; margin: 0; }
-  html, body { margin: 0; padding: 0; background: #fff; color: #000; }
-  body { width: 7.5in; margin: 0 auto; padding: 0.5in 0; box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; background: #fff; color: #000;
+    /* Clamp horizontal overflow so the rasteriser never captures a canvas
+       wider than the page (which made the export shrink to a sliver). */
+    overflow-x: hidden;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+  /* Body is the full page (8.5in); padding gives the 0.5in printable margin.
+     No auto-centering — that confused html2canvas and produced a blank page. */
+  body { width: 8.5in; max-width: 100%; padding: 0.5in; box-sizing: border-box; }
   *, *::before, *::after { box-sizing: border-box; }
-  body * { max-width: 100%; }
+  /* min-width:0 lets flex children actually shrink/wrap instead of forcing the
+     row wider than the page (the main cause of text running off the right). */
+  body * { max-width: 100%; min-width: 0; }
   img { max-width: 100%; height: auto; }
+  table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+  td, th { overflow-wrap: anywhere; word-break: break-word; }
+  input, textarea, select { max-width: 100%; }
   /* Let rows wrap to the page instead of overflowing; label+input+unit
      clusters keep their own nowrap so units never detach. */
   [style*="flex-wrap:nowrap"], [style*="flex-wrap: nowrap"] { flex-wrap: wrap !important; }
@@ -125,7 +139,14 @@ export async function htmlToPdfBlob(html: string): Promise<Blob> {
         scale: 2,
         useCORS: true,
         backgroundColor: "#ffffff",
+        // Pin the capture to exactly one page width so overflow can't blow up
+        // the canvas and shrink the output.
+        width: RENDER_WIDTH,
         windowWidth: RENDER_WIDTH,
+        scrollX: 0,
+        scrollY: 0,
+        x: 0,
+        y: 0,
       },
       jsPDF: { unit: "pt", format: "letter", orientation: "portrait" },
       pagebreak: { mode: ["css", "legacy"] },
