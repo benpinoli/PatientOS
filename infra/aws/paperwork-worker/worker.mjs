@@ -159,6 +159,15 @@ function parseJson(raw, ctx) {
 const fileParts = (files) =>
   (files ?? []).map((f) => ({ inlineData: { data: f.data, mimeType: f.mimeType } }));
 
+// Branding: stored template HTML keeps this token where the org logo goes; the
+// real <img> (large base64) is swapped in only when rendering/filling so it
+// never has to pass back through the model. Keep in sync with src/.../branding.ts.
+const LOGO_TOKEN = "__LOGO_IMG__";
+const logoImgTag = (dataUri) =>
+  `<img src="${dataUri}" alt="Logo" style="max-height:72px;max-width:260px;object-fit:contain;" />`;
+const embedLogo = (html, dataUri) =>
+  !html ? html : html.split(LOGO_TOKEN).join(dataUri ? logoImgTag(dataUri) : "");
+
 async function extractPatientJson({ files, text }) {
   const instruction = [
     "You are a medical intake assistant for a power-wheelchair documentation workflow.",
@@ -194,13 +203,31 @@ async function extractPatientJson({ files, text }) {
   return parseJson(res.text, "patient extraction");
 }
 
-async function templateToHtml({ file, name }) {
+function ensureLogoToken(html) {
+  // Make sure the branding token is present so the logo can be embedded later.
+  if (html.includes(LOGO_TOKEN)) return html;
+  const banner = `<div style="text-align:center;padding:8px 0;">${LOGO_TOKEN}</div>`;
+  const bodyOpen = html.match(/<body[^>]*>/i);
+  if (bodyOpen) {
+    const idx = html.indexOf(bodyOpen[0]) + bodyOpen[0].length;
+    return html.slice(0, idx) + banner + html.slice(idx);
+  }
+  return banner + html;
+}
+
+async function templateToHtml({ file, name, logoDataUri }) {
   const instruction = [
     "You convert a blank form (PDF or image) into an exact, editable HTML copy.",
     "Produce a self-contained HTML document that visually reproduces the form layout",
     "as closely as possible using inline CSS, and renders every blank the user must",
     "fill as an editable field: use <input>, <textarea>, <input type=checkbox>, etc.,",
     "each with a stable name attribute derived from its label.",
+    "IMPORTANT — preserve ALL branding: reproduce the organization/company name,",
+    "logos' text, addresses, form titles, headers, and footers exactly as they",
+    "appear on the original, in the same positions. Do not drop letterhead text.",
+    logoDataUri
+      ? `A branding logo image will be inserted by the system. Put the EXACT token ${LOGO_TOKEN} (uppercase, no spaces, no markup) at the location where the original form's logo/letterhead graphic appears (usually the top header). Do not output an <img> or base64 yourself — only the token.`
+      : `Do not invent a logo image. Just reproduce any branding TEXT as plain HTML.`,
     "Then list every field that needs information.",
     "",
     "Return ONLY a JSON object of the form:",
@@ -216,8 +243,10 @@ async function templateToHtml({ file, name }) {
     config: { responseMimeType: "application/json", temperature: 0 },
   });
   const parsed = parseJson(res.text, "template conversion");
+  let html = parsed.html ?? "";
+  if (logoDataUri) html = ensureLogoToken(html);
   return {
-    html: parsed.html ?? "",
+    html,
     required_fields: Array.isArray(parsed.required_fields) ? parsed.required_fields : [],
     name,
   };
@@ -250,6 +279,8 @@ async function fillTemplate({ templateHtml, requiredFields, patientData }) {
     "  provides the value. Never infer, approximate, fabricate, or use outside",
     "  knowledge. A blank field is strongly preferred over a wrong or invented value.",
     "- Never invent dates of any kind.",
+    `- Preserve any placeholder tokens such as ${LOGO_TOKEN} EXACTLY as-is; do not`,
+    "  remove, move, or alter them.",
     "Use the field mapping (required_fields with json_path) as the primary guide, and",
     "fall back to matching by label when json_path is null.",
     "Return ONLY the HTML document. No prose, no code fences.",
@@ -300,22 +331,31 @@ async function processJob(job) {
   }
 
   if (job.kind === "template") {
+    const logoDataUri = job.input.logoDataUri ?? null;
     const tmpl = await templateToHtml({
       file: job.input.file,
       name: job.input.name,
+      logoDataUri,
     });
     const inserted = await pool.query(
-      `insert into public.paperwork_templates (name, html, required_fields, created_by)
-       values ($1, $2, $3::jsonb, $4)
+      `insert into public.paperwork_templates
+         (name, html, required_fields, logo_data_uri, created_by)
+       values ($1, $2, $3::jsonb, $4, $5)
        returning *`,
-      [tmpl.name, tmpl.html, JSON.stringify(tmpl.required_fields), job.created_by],
+      [
+        tmpl.name,
+        tmpl.html,
+        JSON.stringify(tmpl.required_fields),
+        logoDataUri,
+        job.created_by,
+      ],
     );
     return { template: inserted.rows[0] };
   }
 
   if (job.kind === "fill") {
     const tmplRes = await pool.query(
-      "select id, name, html, required_fields from public.paperwork_templates where id = $1",
+      "select id, name, html, required_fields, logo_data_uri from public.paperwork_templates where id = $1",
       [job.template_id],
     );
     if (!tmplRes.rows[0]) throw new Error("Template not found.");
@@ -327,11 +367,14 @@ async function processJob(job) {
     );
     const patientData = dataRes.rows[0]?.data ?? {};
 
-    const html = await fillTemplate({
+    // Fill using the token-bearing HTML (keeps the large logo out of the model),
+    // then swap the real logo image into the finished document.
+    const filledWithToken = await fillTemplate({
       templateHtml: tmpl.html,
       requiredFields: tmpl.required_fields,
       patientData,
     });
+    const html = embedLogo(filledWithToken, tmpl.logo_data_uri);
 
     const doc = await pool.query(
       `insert into public.paperwork_documents

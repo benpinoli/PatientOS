@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import type {
   PaperworkDocument,
+  PaperworkLogo,
   PaperworkPatientData,
   PaperworkTemplate,
 } from "@/lib/db-types";
@@ -16,9 +17,11 @@ import { TemplatesPanel } from "./TemplatesPanel";
 export function PaperworkApp({
   patients,
   templates: initialTemplates,
+  logos: initialLogos,
 }: {
   patients: PatientLite[];
   templates: PaperworkTemplate[];
+  logos: PaperworkLogo[];
 }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
@@ -26,6 +29,7 @@ export function PaperworkApp({
   const [patientData, setPatientData] = useState<PaperworkPatientData | null>(null);
   const [documents, setDocuments] = useState<PaperworkDocument[]>([]);
   const [templates, setTemplates] = useState<PaperworkTemplate[]>(initialTemplates);
+  const [logos, setLogos] = useState<PaperworkLogo[]>(initialLogos);
   const [dataVersion, setDataVersion] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -140,6 +144,8 @@ export function PaperworkApp({
               }
               templates={templates}
               onTemplatesChange={setTemplates}
+              logos={logos}
+              onLogosChange={setLogos}
               documents={documents}
               onDocumentsChange={setDocuments}
             />

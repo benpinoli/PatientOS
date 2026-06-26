@@ -7,6 +7,7 @@ import type {
 } from "@/lib/paperwork/schema";
 import type {
   PaperworkDocument,
+  PaperworkLogo,
   PaperworkPatientData,
 } from "@/lib/db-types";
 
@@ -80,6 +81,47 @@ export async function savePatientData(
     return { ok: true, value: evaluateCompleteness(data) };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Failed to save." };
+  }
+}
+
+/** Saves a branding logo (data URI) to the shared library. */
+export async function saveLogo(
+  name: string,
+  dataUri: string,
+): Promise<ActionResult<PaperworkLogo>> {
+  try {
+    if (!dataUri.startsWith("data:image/")) {
+      return { ok: false, error: "Please choose an image file (PNG, JPG, …)." };
+    }
+    // Guard against oversized logos bloating every template/document.
+    if (dataUri.length > 2_000_000) {
+      return { ok: false, error: "That image is too large — use a logo under ~1.5 MB." };
+    }
+    const { supabase, user } = await requireAuthedClient();
+    const { data, error } = await supabase
+      .from("paperwork_logos")
+      .insert({ name: name.trim() || "Logo", data_uri: dataUri, created_by: user.id })
+      .select("*")
+      .single();
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, value: data as PaperworkLogo };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Failed to save logo." };
+  }
+}
+
+/** Deletes a branding logo from the shared library. */
+export async function deleteLogo(logoId: string): Promise<ActionResult<true>> {
+  try {
+    const { supabase } = await requireAuthedClient();
+    const { error } = await supabase
+      .from("paperwork_logos")
+      .delete()
+      .eq("id", logoId);
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, value: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Failed to delete logo." };
   }
 }
 

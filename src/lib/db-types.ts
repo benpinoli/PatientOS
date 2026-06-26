@@ -155,9 +155,20 @@ export type PaperworkTemplate = {
   source_mime: string | null;
   html: string;
   required_fields: TemplateRequiredField[];
+  /** Branding logo (data URI) embedded into this template, if any. */
+  logo_data_uri: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
+};
+
+/** A reusable branding logo (stored as a data URI) for the template library. */
+export type PaperworkLogo = {
+  id: string;
+  name: string;
+  data_uri: string;
+  created_by: string | null;
+  created_at: string;
 };
 
 export type PaperworkDocumentStatus = "DRAFT" | "FINAL";
@@ -220,6 +231,7 @@ export type Database = {
       notifications: { Row: Notification; Insert: Partial<Notification> & { recipient_id: string; patient_id: string; type: NotificationType }; Update: Partial<Notification> };
       paperwork_patient_data: { Row: PaperworkPatientDataRow; Insert: Partial<PaperworkPatientDataRow> & { patient_id: string }; Update: Partial<PaperworkPatientDataRow> };
       paperwork_templates: { Row: PaperworkTemplate; Insert: Partial<PaperworkTemplate> & { name: string }; Update: Partial<PaperworkTemplate> };
+      paperwork_logos: { Row: PaperworkLogo; Insert: Partial<PaperworkLogo> & { name: string; data_uri: string }; Update: Partial<PaperworkLogo> };
       paperwork_documents: { Row: PaperworkDocument; Insert: Partial<PaperworkDocument> & { patient_id: string }; Update: Partial<PaperworkDocument> };
       paperwork_source_files: { Row: PaperworkSourceFile; Insert: Partial<PaperworkSourceFile> & { patient_id: string; storage_path: string; filename: string }; Update: Partial<PaperworkSourceFile> };
       paperwork_jobs: { Row: PaperworkJob; Insert: Partial<PaperworkJob> & { kind: PaperworkJobKind }; Update: Partial<PaperworkJob> };

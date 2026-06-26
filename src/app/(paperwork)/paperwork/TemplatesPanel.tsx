@@ -1,15 +1,30 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { PaperworkDocument, PaperworkTemplate } from "@/lib/db-types";
-import { deleteTemplate, saveFilledDocument } from "./actions";
+import type {
+  PaperworkDocument,
+  PaperworkLogo,
+  PaperworkTemplate,
+} from "@/lib/db-types";
+import { deleteTemplate, saveFilledDocument, saveLogo } from "./actions";
 import { fileToBase64Payload, runPaperworkJob } from "./api";
+import { embedLogo } from "./branding";
 import {
   downloadBlob,
   downloadDocsAsZip,
   htmlToPdfBlob,
   safePdfName,
 } from "./pdf";
+
+/** Reads an image File into a `data:` URI string. */
+function fileToDataUri(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(new Error("Could not read the image."));
+    reader.readAsDataURL(file);
+  });
+}
 
 /** Filename without its extension, e.g. "CMS Face-to-Face.pdf" -> "CMS Face-to-Face". */
 function baseName(fileName: string): string {
@@ -59,6 +74,8 @@ export function TemplatesPanel({
   patientLabel,
   templates,
   onTemplatesChange,
+  logos,
+  onLogosChange,
   documents,
   onDocumentsChange,
 }: {
@@ -66,6 +83,8 @@ export function TemplatesPanel({
   patientLabel?: string | null;
   templates: PaperworkTemplate[];
   onTemplatesChange: (next: PaperworkTemplate[]) => void;
+  logos: PaperworkLogo[];
+  onLogosChange: (next: PaperworkLogo[]) => void;
   documents: PaperworkDocument[];
   onDocumentsChange: (next: PaperworkDocument[]) => void;
 }) {
@@ -85,7 +104,12 @@ export function TemplatesPanel({
   const [chosenFileName, setChosenFileName] = useState("");
   const [confirmDelete, setConfirmDelete] = useState<PaperworkTemplate | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [logoId, setLogoId] = useState<string>("");
+  const [busyLogo, setBusyLogo] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const logoRef = useRef<HTMLInputElement>(null);
+
+  const selectedLogo = logos.find((l) => l.id === logoId) ?? null;
 
   const selectedDoc = documents.find((d) => d.template_id === selectedId) ?? null;
   const selectedTemplate = templates.find((t) => t.id === selectedId) ?? null;
@@ -148,7 +172,11 @@ export function TemplatesPanel({
       const filePayload = await fileToBase64Payload(file);
       const json = await runPaperworkJob<{ template: PaperworkTemplate }>({
         kind: "template",
-        input: { name: uploadName.trim(), file: filePayload },
+        input: {
+          name: uploadName.trim(),
+          file: filePayload,
+          logoDataUri: selectedLogo?.data_uri ?? null,
+        },
         onElapsed: setUploadElapsed,
       });
       const tmpl = json.template;
@@ -186,6 +214,28 @@ export function TemplatesPanel({
       setError(e instanceof Error ? e.message : "Fill failed.");
     } finally {
       setBusyFill(false);
+    }
+  };
+
+  const uploadLogo = async (file: File) => {
+    setBusyLogo(true);
+    setError(null);
+    try {
+      const dataUri = await fileToDataUri(file);
+      const result = await saveLogo(baseName(file.name), dataUri);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      onLogosChange(
+        [...logos, result.value].sort((a, b) => a.name.localeCompare(b.name)),
+      );
+      setLogoId(result.value.id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not upload the logo.");
+    } finally {
+      setBusyLogo(false);
+      if (logoRef.current) logoRef.current.value = "";
     }
   };
 
@@ -272,6 +322,49 @@ export function TemplatesPanel({
               }
             }}
           />
+
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-[var(--tron-muted)]">Branding logo:</span>
+            <select
+              className="tron-input max-w-44 text-xs"
+              value={logoId}
+              onChange={(e) => setLogoId(e.target.value)}
+            >
+              <option value="">No logo</option>
+              {logos.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
+            <button
+              className="tron-btn text-xs"
+              type="button"
+              onClick={() => logoRef.current?.click()}
+              disabled={busyLogo}
+            >
+              {busyLogo ? "Uploading…" : "Upload logo"}
+            </button>
+            {selectedLogo && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={selectedLogo.data_uri}
+                alt={selectedLogo.name}
+                className="h-7 max-w-24 rounded bg-white object-contain p-0.5"
+              />
+            )}
+          </div>
+          <input
+            ref={logoRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) uploadLogo(f);
+            }}
+          />
+
           <button className="tron-btn text-xs" onClick={uploadTemplate} disabled={busyUpload}>
             {busyUpload ? `Converting… ${uploadElapsed}s` : "Convert to editable copy"}
           </button>
@@ -318,7 +411,7 @@ export function TemplatesPanel({
                 </label>
               )}
               {hasPreview ? (
-                <TemplatePreview html={t.html} name={t.name} />
+                <TemplatePreview html={embedLogo(t.html, t.logo_data_uri)} name={t.name} />
               ) : (
                 <div
                   className="flex w-full items-center justify-center rounded bg-white text-3xl"
