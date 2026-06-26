@@ -1,0 +1,32 @@
+# Paperwork AI worker — runs on the same Docker network as the self-hosted
+# Supabase stack so it can reach the Postgres container directly.
+#
+# Deploy (on the EC2 host, from /opt/paperwork-worker):
+#   1. Create worker.env with:  GEMINI_API_KEY=AQ...   (optional GEMINI_MODEL=...)
+#   2. sudo docker compose -f docker-compose.worker.yml up -d --build
+#
+# Logs:   sudo docker logs -f paperwork-worker
+# Update: re-copy files, then re-run the up -d --build command.
+
+services:
+  paperwork-worker:
+    build: .
+    image: paperwork-worker:latest
+    container_name: paperwork-worker
+    restart: unless-stopped
+    env_file:
+      # POSTGRES_PASSWORD / POSTGRES_DB from the Supabase stack:
+      - /opt/choice-supabase/.env
+      # GEMINI_API_KEY (and optional GEMINI_MODEL) — created on the host, not committed:
+      - ./worker.env
+    environment:
+      PGHOST: supabase-db
+      PGPORT: "5432"
+      PGUSER: postgres
+    networks:
+      - supabase
+
+networks:
+  supabase:
+    external: true
+    name: supabase_default

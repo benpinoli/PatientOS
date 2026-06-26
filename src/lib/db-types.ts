@@ -186,6 +186,26 @@ export type PaperworkSourceFile = {
   created_at: string;
 };
 
+export type PaperworkJobKind = "extract" | "template" | "fill";
+export type PaperworkJobStatus = "PENDING" | "RUNNING" | "DONE" | "ERROR";
+
+/** Async AI job processed off-Amplify by the EC2 worker (see 0019 migration). */
+export type PaperworkJob = {
+  id: string;
+  kind: PaperworkJobKind;
+  status: PaperworkJobStatus;
+  patient_id: string | null;
+  template_id: string | null;
+  input: Record<string, unknown>;
+  result: Record<string, unknown> | null;
+  error: string | null;
+  created_by: string | null;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  updated_at: string;
+};
+
 // Minimal `Database` shape so the supabase-js generics know our tables.
 export type Database = {
   public: {
@@ -202,6 +222,7 @@ export type Database = {
       paperwork_templates: { Row: PaperworkTemplate; Insert: Partial<PaperworkTemplate> & { name: string }; Update: Partial<PaperworkTemplate> };
       paperwork_documents: { Row: PaperworkDocument; Insert: Partial<PaperworkDocument> & { patient_id: string }; Update: Partial<PaperworkDocument> };
       paperwork_source_files: { Row: PaperworkSourceFile; Insert: Partial<PaperworkSourceFile> & { patient_id: string; storage_path: string; filename: string }; Update: Partial<PaperworkSourceFile> };
+      paperwork_jobs: { Row: PaperworkJob; Insert: Partial<PaperworkJob> & { kind: PaperworkJobKind }; Update: Partial<PaperworkJob> };
     };
     Views: Record<string, never>;
     Functions: {

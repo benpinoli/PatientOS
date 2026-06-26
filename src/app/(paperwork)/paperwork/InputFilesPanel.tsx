@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import type { PaperworkPatientData } from "@/lib/db-types";
 import { PdfThumbnail } from "./PdfThumbnail";
-import { readApiJson } from "./api";
+import { fileToBase64Payload, runPaperworkJob } from "./api";
 
 export function InputFilesPanel({
   patientId,
@@ -16,6 +16,7 @@ export function InputFilesPanel({
   const [text, setText] = useState("");
   const [dragActive, setDragActive] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -40,22 +41,19 @@ export function InputFilesPanel({
       return;
     }
     setBusy(true);
+    setElapsed(0);
     setError(null);
     try {
-      const form = new FormData();
-      form.set("patient_id", patientId);
-      form.set("text", text);
-      for (const file of files) form.append("files", file);
-      const res = await fetch("/api/paperwork/extract", {
-        method: "POST",
-        body: form,
+      const filePayloads = await Promise.all(files.map(fileToBase64Payload));
+      const result = await runPaperworkJob<{ data: PaperworkPatientData }>({
+        kind: "extract",
+        patientId,
+        input: { text, files: filePayloads },
+        onElapsed: setElapsed,
       });
-      const json = await readApiJson<{ data: PaperworkPatientData }>(
-        res,
-        "Extraction",
-      );
-      onExtracted(json.data);
+      onExtracted(result.data);
       setText("");
+      setFiles([]);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Extraction failed.");
     } finally {
@@ -75,7 +73,7 @@ export function InputFilesPanel({
           disabled={disabled || busy}
           title={disabled ? "Select a patient first" : undefined}
         >
-          {busy ? "Reading…" : "Extract with AI"}
+          {busy ? `Reading… ${elapsed}s` : "Extract with AI"}
         </button>
       </div>
 

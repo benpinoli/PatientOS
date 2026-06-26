@@ -1,0 +1,15 @@
+{
+  "name": "paperwork-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Long-running worker that processes paperwork_jobs (Gemini) off the Amplify 30s SSR cap.",
+  "main": "worker.mjs",
+  "scripts": {
+    "start": "node worker.mjs"
+  },
+  "dependencies": {
+    "@google/genai": "^2.10.0",
+    "pg": "^8.13.1"
+  }
+}

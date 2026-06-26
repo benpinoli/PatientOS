@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import type { PaperworkDocument, PaperworkTemplate } from "@/lib/db-types";
 import { saveFilledDocument } from "./actions";
-import { readApiJson } from "./api";
+import { fileToBase64Payload, runPaperworkJob } from "./api";
 
 /** Filename without its extension, e.g. "CMS Face-to-Face.pdf" -> "CMS Face-to-Face". */
 function baseName(fileName: string): string {
@@ -27,7 +27,9 @@ export function TemplatesPanel({
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploadName, setUploadName] = useState("");
   const [busyUpload, setBusyUpload] = useState(false);
+  const [uploadElapsed, setUploadElapsed] = useState(0);
   const [busyFill, setBusyFill] = useState(false);
+  const [fillElapsed, setFillElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [editHtml, setEditHtml] = useState("");
@@ -43,19 +45,15 @@ export function TemplatesPanel({
       return;
     }
     setBusyUpload(true);
+    setUploadElapsed(0);
     setError(null);
     try {
-      const form = new FormData();
-      form.set("name", uploadName.trim());
-      form.set("file", file);
-      const res = await fetch("/api/paperwork/template", {
-        method: "POST",
-        body: form,
+      const filePayload = await fileToBase64Payload(file);
+      const json = await runPaperworkJob<{ template: PaperworkTemplate }>({
+        kind: "template",
+        input: { name: uploadName.trim(), file: filePayload },
+        onElapsed: setUploadElapsed,
       });
-      const json = await readApiJson<{ template: PaperworkTemplate }>(
-        res,
-        "Template conversion",
-      );
       const tmpl = json.template;
       onTemplatesChange([...templates, tmpl].sort((a, b) => a.name.localeCompare(b.name)));
       setUploadOpen(false);
@@ -72,17 +70,16 @@ export function TemplatesPanel({
   const fill = async () => {
     if (!patientId || !selectedId) return;
     setBusyFill(true);
+    setFillElapsed(0);
     setError(null);
     try {
-      const res = await fetch("/api/paperwork/fill", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ patient_id: patientId, template_id: selectedId }),
+      const json = await runPaperworkJob<{ document: PaperworkDocument }>({
+        kind: "fill",
+        patientId,
+        templateId: selectedId,
+        input: {},
+        onElapsed: setFillElapsed,
       });
-      const json = await readApiJson<{ document: PaperworkDocument }>(
-        res,
-        "Fill",
-      );
       const doc = json.document;
       const next = documents.filter((d) => d.template_id !== doc.template_id);
       onDocumentsChange([doc, ...next]);
@@ -147,7 +144,7 @@ export function TemplatesPanel({
             }}
           />
           <button className="tron-btn text-xs" onClick={uploadTemplate} disabled={busyUpload}>
-            {busyUpload ? "Converting…" : "Convert to editable copy"}
+            {busyUpload ? `Converting… ${uploadElapsed}s` : "Convert to editable copy"}
           </button>
         </div>
       )}
@@ -186,7 +183,7 @@ export function TemplatesPanel({
         <div className="mt-4 flex flex-1 flex-col">
           <div className="mb-2 flex items-center gap-2">
             <button className="tron-btn text-xs" onClick={fill} disabled={disabled || busyFill}>
-              {busyFill ? "Filling…" : selectedDoc ? "Re-fill from patient data" : "Fill from patient data"}
+              {busyFill ? `Filling… ${fillElapsed}s` : selectedDoc ? "Re-fill from patient data" : "Fill from patient data"}
             </button>
             {selectedDoc && !editing && (
               <button className="tron-btn text-xs" onClick={startEdit}>
