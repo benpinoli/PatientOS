@@ -19,6 +19,7 @@ import {
   downloadBlob,
   downloadDocsAsZip,
   htmlToPdfBlob,
+  injectPageStyle,
   safePdfName,
 } from "./pdf";
 
@@ -119,8 +120,12 @@ export function TemplatesPanel({
   const [deletingLogo, setDeletingLogo] = useState(false);
   const [companyDraft, setCompanyDraft] = useState("");
   const [savingCompany, setSavingCompany] = useState(false);
+  const [fullView, setFullView] = useState(false);
+  const [savingTyped, setSavingTyped] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const logoRef = useRef<HTMLInputElement>(null);
+  const previewRef = useRef<HTMLIFrameElement>(null);
+  const fullRef = useRef<HTMLIFrameElement>(null);
 
   const selectedLogo = logos.find((l) => l.id === logoId) ?? null;
 
@@ -128,6 +133,11 @@ export function TemplatesPanel({
   useEffect(() => {
     setCompanyDraft(selectedLogo?.company_name ?? "");
   }, [selectedLogo?.id, selectedLogo?.company_name]);
+
+  // Close the full-view editor whenever the selected template changes.
+  useEffect(() => {
+    setFullView(false);
+  }, [selectedId]);
 
   const selectedDoc = documents.find((d) => d.template_id === selectedId) ?? null;
   const selectedTemplate = templates.find((t) => t.id === selectedId) ?? null;
@@ -143,17 +153,77 @@ export function TemplatesPanel({
     });
   };
 
+  /**
+   * Serializes the live field values from a rendered iframe back into the HTML
+   * string, so anything the user typed (text, checkboxes, signatures) is part of
+   * the saved/downloaded document — not just the AI-filled values.
+   */
+  const captureHtmlFromIframe = (
+    iframe: HTMLIFrameElement | null,
+    fallback: string,
+  ): string => {
+    const doc = iframe?.contentDocument;
+    if (!doc || !doc.body) return fallback;
+    doc
+      .querySelectorAll<HTMLInputElement>("input")
+      .forEach((el) => {
+        if (el.type === "checkbox" || el.type === "radio") {
+          if (el.checked) el.setAttribute("checked", "");
+          else el.removeAttribute("checked");
+        } else {
+          el.setAttribute("value", el.value);
+        }
+      });
+    doc
+      .querySelectorAll<HTMLTextAreaElement>("textarea")
+      .forEach((el) => {
+        el.textContent = el.value;
+      });
+    doc.querySelectorAll<HTMLSelectElement>("select").forEach((el) => {
+      Array.from(el.options).forEach((opt) => {
+        if (opt.selected) opt.setAttribute("selected", "");
+        else opt.removeAttribute("selected");
+      });
+    });
+    return `<!doctype html>${doc.documentElement.outerHTML}`;
+  };
+
+  /** HTML for `doc`, preferring live typed values when its iframe is open. */
+  const htmlForDoc = (doc: PaperworkDocument): string => {
+    if (selectedDoc && doc.id === selectedDoc.id) {
+      const iframe = fullView ? fullRef.current : previewRef.current;
+      return captureHtmlFromIframe(iframe, doc.filled_html);
+    }
+    return doc.filled_html;
+  };
+
   const downloadOne = async (doc: PaperworkDocument) => {
     setDownloadMsg("Building PDF…");
     setError(null);
     try {
-      const blob = await htmlToPdfBlob(doc.filled_html);
+      const blob = await htmlToPdfBlob(htmlForDoc(doc));
       downloadBlob(blob, safePdfName(doc.template_name ?? "document"));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not build the PDF.");
     } finally {
       setDownloadMsg(null);
     }
+  };
+
+  /** Persists the currently typed-in field values back to the document. */
+  const saveTyped = async (doc: PaperworkDocument) => {
+    setSavingTyped(true);
+    setError(null);
+    const html = htmlForDoc(doc);
+    const result = await saveFilledDocument(doc.id, html);
+    setSavingTyped(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    onDocumentsChange(
+      documents.map((d) => (d.id === doc.id ? { ...d, filled_html: html } : d)),
+    );
   };
 
   const downloadPicked = async () => {
@@ -594,6 +664,12 @@ export function TemplatesPanel({
               <>
                 <button
                   className="tron-btn text-xs"
+                  onClick={() => setFullView(true)}
+                >
+                  Open full view
+                </button>
+                <button
+                  className="tron-btn text-xs"
                   onClick={() => downloadOne(selectedDoc)}
                   disabled={busyDownload}
                 >
@@ -632,10 +708,11 @@ export function TemplatesPanel({
             />
           ) : selectedDoc ? (
             <iframe
+              ref={previewRef}
               title="Filled document"
               className="min-h-96 flex-1 rounded-lg border border-[var(--tron-line)] bg-white"
-              sandbox=""
-              srcDoc={selectedDoc.filled_html}
+              sandbox="allow-same-origin"
+              srcDoc={injectPageStyle(selectedDoc.filled_html)}
             />
           ) : (
             <div className="flex min-h-48 flex-1 items-center justify-center rounded-lg border border-dashed border-[var(--tron-line)] text-xs text-[var(--tron-muted)]">
@@ -644,6 +721,51 @@ export function TemplatesPanel({
                 : "Click “Fill from patient data” to generate this document."}
             </div>
           )}
+        </div>
+      )}
+
+      {fullView && selectedDoc && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-black/80 p-4">
+          <div className="mx-auto flex w-full max-w-[860px] items-center gap-2 pb-3">
+            <h3 className="tron-panel-title mr-auto truncate">
+              {selectedDoc.template_name ?? "Document"}
+            </h3>
+            <button
+              className="tron-btn text-xs"
+              onClick={() => downloadOne(selectedDoc)}
+              disabled={busyDownload}
+            >
+              {busyDownload ? downloadMsg : "Download PDF"}
+            </button>
+            <button
+              className="tron-btn text-xs"
+              onClick={() => saveTyped(selectedDoc)}
+              disabled={savingTyped}
+            >
+              {savingTyped ? "Saving…" : "Save typed text"}
+            </button>
+            <button
+              className="tron-btn text-xs"
+              onClick={() => setFullView(false)}
+            >
+              Close
+            </button>
+          </div>
+          <div className="mx-auto w-full max-w-[860px] flex-1 overflow-auto rounded-lg bg-neutral-300 p-4">
+            <iframe
+              ref={fullRef}
+              title="Full view"
+              sandbox="allow-same-origin"
+              srcDoc={injectPageStyle(selectedDoc.filled_html)}
+              className="mx-auto block border-0 bg-white shadow-lg"
+              style={{ width: "816px", height: "1056px" }}
+              onLoad={(e) => {
+                const f = e.currentTarget;
+                const d = f.contentDocument;
+                if (d?.body) f.style.height = `${d.body.scrollHeight}px`;
+              }}
+            />
+          </div>
         </div>
       )}
 

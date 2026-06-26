@@ -58,10 +58,44 @@ function getJsZip(): Promise<any> {
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
-/** A4 width in CSS px at 96dpi — used as the render width for the iframe. */
-const RENDER_WIDTH = 794;
+/** US Letter width in CSS px at 96dpi (8.5in). */
+const RENDER_WIDTH = 816;
 
-/** Renders a full HTML document string to a PDF Blob. */
+/**
+ * Page geometry forced onto every rendered/exported document so it always lands
+ * on US Letter (8.5x11) with consistent margins, regardless of whatever width
+ * the model happened to emit. Applied to the preview, the full-view editor, and
+ * the PDF export so all three match.
+ */
+export const PAGE_STYLE = `
+  @page { size: letter; margin: 0; }
+  html, body { margin: 0; padding: 0; background: #fff; color: #000; }
+  body { width: 7.5in; margin: 0 auto; padding: 0.5in 0; box-sizing: border-box; }
+  *, *::before, *::after { box-sizing: border-box; }
+  body * { max-width: 100%; }
+  img { max-width: 100%; height: auto; }
+  /* Let rows wrap to the page instead of overflowing; label+input+unit
+     clusters keep their own nowrap so units never detach. */
+  [style*="flex-wrap:nowrap"], [style*="flex-wrap: nowrap"] { flex-wrap: wrap !important; }
+`;
+
+/**
+ * Injects {@link PAGE_STYLE} into an HTML document string so its geometry is
+ * normalized to US Letter. The style is appended last (after the document's own
+ * <style>) so it wins on conflicting rules.
+ */
+export function injectPageStyle(html: string): string {
+  const tag = `<style data-paperwork-page>${PAGE_STYLE}</style>`;
+  if (/<\/head>/i.test(html)) {
+    return html.replace(/<\/head>/i, `${tag}</head>`);
+  }
+  if (/<body[^>]*>/i.test(html)) {
+    return html.replace(/(<body[^>]*>)/i, `$1${tag}`);
+  }
+  return tag + html;
+}
+
+/** Renders a full HTML document string to a US Letter PDF Blob. */
 export async function htmlToPdfBlob(html: string): Promise<Blob> {
   const html2pdf = await getHtml2pdf();
 
@@ -70,7 +104,7 @@ export async function htmlToPdfBlob(html: string): Promise<Blob> {
   iframe.style.left = "-10000px";
   iframe.style.top = "0";
   iframe.style.width = `${RENDER_WIDTH}px`;
-  iframe.style.height = `${Math.round((RENDER_WIDTH * 4) / 3)}px`;
+  iframe.style.height = `${Math.round((RENDER_WIDTH * 11) / 8.5)}px`;
   iframe.setAttribute("aria-hidden", "true");
   document.body.appendChild(iframe);
 
@@ -78,13 +112,14 @@ export async function htmlToPdfBlob(html: string): Promise<Blob> {
     const doc = iframe.contentDocument;
     if (!doc) throw new Error("Could not prepare the document for export.");
     doc.open();
-    doc.write(html);
+    doc.write(injectPageStyle(html));
     doc.close();
     // Give the iframe a moment to lay out fonts/images before rasterising.
     await new Promise((r) => setTimeout(r, 400));
 
     const opt = {
-      margin: 8,
+      // Margins live in PAGE_STYLE (body padding) so they can't double up.
+      margin: 0,
       image: { type: "jpeg", quality: 0.96 },
       html2canvas: {
         scale: 2,
@@ -92,7 +127,7 @@ export async function htmlToPdfBlob(html: string): Promise<Blob> {
         backgroundColor: "#ffffff",
         windowWidth: RENDER_WIDTH,
       },
-      jsPDF: { unit: "pt", format: "a4", orientation: "portrait" },
+      jsPDF: { unit: "pt", format: "letter", orientation: "portrait" },
       pagebreak: { mode: ["css", "legacy"] },
     };
 
