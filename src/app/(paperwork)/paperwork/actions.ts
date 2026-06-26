@@ -83,6 +83,23 @@ export async function savePatientData(
   }
 }
 
+/** Deletes a template from the shared library (affects all users). */
+export async function deleteTemplate(
+  templateId: string,
+): Promise<ActionResult<true>> {
+  try {
+    const { supabase } = await requireAuthedClient();
+    const { error } = await supabase
+      .from("paperwork_templates")
+      .delete()
+      .eq("id", templateId);
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, value: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Failed to delete." };
+  }
+}
+
 /** Saves user edits to a filled document's HTML. */
 export async function saveFilledDocument(
   documentId: string,

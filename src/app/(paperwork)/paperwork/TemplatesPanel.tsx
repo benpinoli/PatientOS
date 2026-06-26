@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { PaperworkDocument, PaperworkTemplate } from "@/lib/db-types";
-import { saveFilledDocument } from "./actions";
+import { deleteTemplate, saveFilledDocument } from "./actions";
 import { fileToBase64Payload, runPaperworkJob } from "./api";
 import {
   downloadBlob,
@@ -82,9 +82,13 @@ export function TemplatesPanel({
   const [savingEdit, setSavingEdit] = useState(false);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [downloadMsg, setDownloadMsg] = useState<string | null>(null);
+  const [chosenFileName, setChosenFileName] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState<PaperworkTemplate | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const selectedDoc = documents.find((d) => d.template_id === selectedId) ?? null;
+  const selectedTemplate = templates.find((t) => t.id === selectedId) ?? null;
   const filledDocs = documents;
   const busyDownload = downloadMsg !== null;
 
@@ -151,6 +155,7 @@ export function TemplatesPanel({
       onTemplatesChange([...templates, tmpl].sort((a, b) => a.name.localeCompare(b.name)));
       setUploadOpen(false);
       setUploadName("");
+      setChosenFileName("");
       if (fileRef.current) fileRef.current.value = "";
       setSelectedId(tmpl.id);
     } catch (e) {
@@ -182,6 +187,22 @@ export function TemplatesPanel({
     } finally {
       setBusyFill(false);
     }
+  };
+
+  const confirmDeleteTemplate = async () => {
+    if (!confirmDelete) return;
+    setDeleting(true);
+    setError(null);
+    const result = await deleteTemplate(confirmDelete.id);
+    setDeleting(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    const deletedId = confirmDelete.id;
+    onTemplatesChange(templates.filter((t) => t.id !== deletedId));
+    if (selectedId === deletedId) setSelectedId(null);
+    setConfirmDelete(null);
   };
 
   const startEdit = () => {
@@ -227,13 +248,28 @@ export function TemplatesPanel({
             value={uploadName}
             onChange={(e) => setUploadName(e.target.value)}
           />
+          <div className="flex items-center gap-2">
+            <button
+              className="tron-btn text-xs"
+              type="button"
+              onClick={() => fileRef.current?.click()}
+            >
+              Choose File
+            </button>
+            <span className="truncate text-xs text-[var(--tron-muted)]" title={chosenFileName}>
+              {chosenFileName || "No file chosen"}
+            </span>
+          </div>
           <input
             ref={fileRef}
             type="file"
-            className="block w-full text-xs text-[var(--tron-muted)]"
+            hidden
             onChange={(e) => {
               const f = e.target.files?.[0];
-              if (f) setUploadName(baseName(f.name));
+              if (f) {
+                setChosenFileName(f.name);
+                setUploadName(baseName(f.name));
+              }
             }}
           />
           <button className="tron-btn text-xs" onClick={uploadTemplate} disabled={busyUpload}>
@@ -362,6 +398,14 @@ export function TemplatesPanel({
                 </button>
               </>
             )}
+            {selectedTemplate && !editing && (
+              <button
+                className="tron-btn tron-bad ml-auto text-xs"
+                onClick={() => setConfirmDelete(selectedTemplate)}
+              >
+                Delete template
+              </button>
+            )}
           </div>
 
           {editing ? (
@@ -384,6 +428,42 @@ export function TemplatesPanel({
                 : "Click “Fill from patient data” to generate this document."}
             </div>
           )}
+        </div>
+      )}
+
+      {confirmDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          onClick={() => !deleting && setConfirmDelete(null)}
+        >
+          <div
+            className="tron-panel w-full max-w-sm p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="tron-panel-title mb-2">Delete template?</h3>
+            <p className="text-sm text-[var(--tron-text)]">
+              Are you sure you want to delete{" "}
+              <strong className="tron-glow">{confirmDelete.name}</strong>? This
+              removes it from the shared template library for everyone. Documents
+              already filled from it are kept.
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                className="tron-btn text-xs"
+                onClick={() => setConfirmDelete(null)}
+                disabled={deleting}
+              >
+                Cancel
+              </button>
+              <button
+                className="tron-btn tron-bad text-xs"
+                onClick={confirmDeleteTemplate}
+                disabled={deleting}
+              >
+                {deleting ? "Deleting…" : "Delete"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </section>
