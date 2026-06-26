@@ -12,7 +12,7 @@ INSTALL_DIR="${INSTALL_DIR:-/opt/choice-supabase}"
 # Branch the migrations are pulled from. Override with REPO_BRANCH=main once the
 # Paperwork AI work is merged to main.
 REPO_BRANCH="${REPO_BRANCH:-integrated_AI}"
-REPO_RAW="${REPO_RAW:-https://raw.githubusercontent.com/benpinoli/Choice-Healthcare-Task-System/${REPO_BRANCH}/supabase/migrations}"
+REPO_RAW="${REPO_RAW:-https://raw.githubusercontent.com/benpinoli/PatientOS/${REPO_BRANCH}/supabase/migrations}"
 
 # Listed in order. Re-running is safe: each migration is idempotent (drop/create
 # + if-not-exists), so already-applied ones are no-ops.
