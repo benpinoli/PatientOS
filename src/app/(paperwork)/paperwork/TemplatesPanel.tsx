@@ -5,6 +5,11 @@ import type { PaperworkDocument, PaperworkTemplate } from "@/lib/db-types";
 import { saveFilledDocument } from "./actions";
 import { readApiJson } from "./api";
 
+/** Filename without its extension, e.g. "CMS Face-to-Face.pdf" -> "CMS Face-to-Face". */
+function baseName(fileName: string): string {
+  return fileName.replace(/\.[^./\\]+$/, "");
+}
+
 export function TemplatesPanel({
   patientId,
   templates,
@@ -132,7 +137,15 @@ export function TemplatesPanel({
             value={uploadName}
             onChange={(e) => setUploadName(e.target.value)}
           />
-          <input ref={fileRef} type="file" className="block w-full text-xs text-[var(--tron-muted)]" />
+          <input
+            ref={fileRef}
+            type="file"
+            className="block w-full text-xs text-[var(--tron-muted)]"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) setUploadName(baseName(f.name));
+            }}
+          />
           <button className="tron-btn text-xs" onClick={uploadTemplate} disabled={busyUpload}>
             {busyUpload ? "Converting…" : "Convert to editable copy"}
           </button>
