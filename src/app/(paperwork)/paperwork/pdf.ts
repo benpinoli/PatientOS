@@ -132,6 +132,60 @@ export function injectPageStyle(html: string): string {
   return tag + html;
 }
 
+/**
+ * Splits the rendered body (height `totalCss`, in CSS px) into page-sized slices
+ * whose cut lines fall in the gaps BETWEEN elements, so no row/field/line is
+ * split across a page boundary. Greedy: each page takes up to `pageHeightCss`,
+ * then the break is pulled up above any element it would otherwise straddle.
+ */
+function computePageSlices(
+  doc: Document,
+  totalCss: number,
+  pageHeightCss: number,
+): { start: number; height: number }[] {
+  const bodyTop = doc.body.getBoundingClientRect().top;
+  // Atomic elements we must not cut through: those that fit within a page.
+  const spans: { top: number; bottom: number }[] = [];
+  doc.body.querySelectorAll<HTMLElement>("*").forEach((el) => {
+    const r = el.getBoundingClientRect();
+    const top = r.top - bodyTop;
+    const bottom = r.bottom - bodyTop;
+    const h = bottom - top;
+    if (h > 0 && h <= pageHeightCss) spans.push({ top, bottom });
+  });
+
+  const slices: { start: number; height: number }[] = [];
+  let y = 0;
+  let guard = 0;
+  while (y < totalCss - 1 && guard++ < 2000) {
+    const limit = y + pageHeightCss;
+    if (limit >= totalCss) {
+      slices.push({ start: y, height: totalCss - y });
+      break;
+    }
+    // Pull the break up above any element it straddles (iterate to convergence).
+    let breakY = limit;
+    let changed = true;
+    let inner = 0;
+    while (changed && inner++ < 5000) {
+      changed = false;
+      for (const s of spans) {
+        if (s.top > y && s.top < breakY && s.bottom > breakY) {
+          breakY = s.top;
+          changed = true;
+        }
+      }
+    }
+    // An element taller than a page (or starting at y) can't be avoided; fall
+    // back to a hard cut at the page limit to keep making progress.
+    if (breakY <= y) breakY = limit;
+    slices.push({ start: y, height: breakY - y });
+    y = breakY;
+  }
+  if (slices.length === 0) slices.push({ start: 0, height: totalCss });
+  return slices;
+}
+
 /** Renders a full HTML document string to a US Letter PDF Blob. */
 export async function htmlToPdfBlob(html: string): Promise<Blob> {
   const [html2canvas, jsPDF] = await Promise.all([
@@ -166,10 +220,27 @@ export async function htmlToPdfBlob(html: string): Promise<Blob> {
     iframe.style.height = `${fullHeight}px`;
     await new Promise((r) => setTimeout(r, 50));
 
+    const SCALE = 2;
+
+    const pdf = new jsPDF({
+      unit: "pt",
+      format: "letter",
+      orientation: "portrait",
+    });
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+    // How many CSS px of body content fit on one Letter page (body is the full
+    // 8.5in width mapped to pageW, so the same ratio gives the page height).
+    const pageHeightCss = (pageH * RENDER_WIDTH) / pageW;
+
+    // Compute page breaks that fall BETWEEN elements (rows/fields), never
+    // through them, so a line is not cut across a page boundary.
+    const slices = computePageSlices(doc, fullHeight, pageHeightCss);
+
     // Rasterise inside the iframe (its <head> styles apply here, unlike
     // html2pdf's clone-into-main-document approach).
     const canvas = await html2canvas(doc.body, {
-      scale: 2,
+      scale: SCALE,
       useCORS: true,
       backgroundColor: "#ffffff",
       width: RENDER_WIDTH,
@@ -182,30 +253,32 @@ export async function htmlToPdfBlob(html: string): Promise<Blob> {
       y: 0,
     });
 
-    const pdf = new jsPDF({
-      unit: "pt",
-      format: "letter",
-      orientation: "portrait",
+    slices.forEach((slice, i) => {
+      const sliceCanvas = document.createElement("canvas");
+      sliceCanvas.width = canvas.width;
+      sliceCanvas.height = Math.round(slice.height * SCALE);
+      const ctx = sliceCanvas.getContext("2d");
+      if (ctx) {
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+        ctx.drawImage(
+          canvas,
+          0,
+          Math.round(slice.start * SCALE),
+          canvas.width,
+          sliceCanvas.height,
+          0,
+          0,
+          canvas.width,
+          sliceCanvas.height,
+        );
+      }
+      const imgData = sliceCanvas.toDataURL("image/jpeg", 0.96);
+      const imgW = pageW;
+      const imgH = (sliceCanvas.height * pageW) / sliceCanvas.width;
+      if (i > 0) pdf.addPage();
+      pdf.addImage(imgData, "JPEG", 0, 0, imgW, imgH);
     });
-    const pageW = pdf.internal.pageSize.getWidth();
-    const pageH = pdf.internal.pageSize.getHeight();
-    // Map the full-width canvas onto the full page width (margins already live
-    // in the body padding), preserving aspect ratio.
-    const imgW = pageW;
-    const imgH = (canvas.height * pageW) / canvas.width;
-    const imgData = canvas.toDataURL("image/jpeg", 0.96);
-
-    let heightLeft = imgH;
-    let position = 0;
-    pdf.addImage(imgData, "JPEG", 0, position, imgW, imgH);
-    heightLeft -= pageH;
-    // Slice the tall image across additional Letter pages as needed.
-    while (heightLeft > 0) {
-      position = heightLeft - imgH;
-      pdf.addPage();
-      pdf.addImage(imgData, "JPEG", 0, position, imgW, imgH);
-      heightLeft -= pageH;
-    }
 
     return pdf.output("blob") as Blob;
   } finally {
