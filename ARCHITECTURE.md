@@ -4,6 +4,8 @@
 
 Choice Healthcare is a small medical-equipment provider whose staff currently track each patient's prior-authorization pipeline in scattered spreadsheets and group chats. The tracker is an internal web app that gives every Rep, ATP, Manager, and the owner ("Boss") a single live view of where each patient is in the workflow, what task is next, who owns it, and which approvals are still outstanding. v1 is a thin-but-correct slice: auth, an RLS-protected data model, snapshotted per-patient task lists, and an ATP approval gate. It is not a document store, EHR, or e-sign tool.
 
+> **Paperwork AI extension.** A later bolt-on uses Google Gemini to extract patient data from source PDFs, convert blank payer forms into editable HTML templates, and fill/export them as PDFs. Its architecture, the engineering decisions behind it, and the specific bugs + fixes (the Amplify 30s-cap → EC2 worker, the PDF-rendering pipeline, prompt tuning) are documented separately in [`PAPERWORK_AI.md`](PAPERWORK_AI.md). That file is written to be fed to an AI/new engineer as a standalone decision log.
+
 ## 2. Stack
 
 - **Frontend**: Next.js 16.2 App Router, React 19.2, Tailwind 4 (via `@tailwindcss/postcss`).
