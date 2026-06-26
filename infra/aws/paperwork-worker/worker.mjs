@@ -29,6 +29,46 @@ if (!process.env.GEMINI_API_KEY) {
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
+// Hard per-call timeout + retry. Without this a hung connection to the Gemini
+// endpoint ("fetch failed") can stall for minutes, both failing the job and
+// blocking the single-threaded queue behind it. Kept well under the browser's
+// ~3 min polling window: worst case ~= TIMEOUT * ATTEMPTS + backoff.
+const GEN_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS ?? 70000);
+const GEN_ATTEMPTS = Number(process.env.GEMINI_ATTEMPTS ?? 2);
+const GEN_THINKING_LEVEL = process.env.GEMINI_THINKING_LEVEL ?? "LOW";
+
+async function generateContent(params) {
+  let lastErr;
+  for (let attempt = 1; attempt <= GEN_ATTEMPTS; attempt++) {
+    try {
+      return await ai.models.generateContent({
+        ...params,
+        config: {
+          // Gemini 3.x models "think" by default, which can take far longer than
+          // the browser app (which runs flash-lite with minimal thinking) and blow
+          // past the request deadline (504 DEADLINE_EXCEEDED). Keep thinking low so
+          // these formatting/extraction tasks return in seconds. Callers may
+          // override by setting their own thinkingConfig.
+          thinkingConfig: { thinkingLevel: GEN_THINKING_LEVEL },
+          ...(params.config ?? {}),
+          abortSignal: AbortSignal.timeout(GEN_TIMEOUT_MS),
+          httpOptions: {
+            ...(params.config?.httpOptions ?? {}),
+            timeout: GEN_TIMEOUT_MS,
+          },
+        },
+      });
+    } catch (e) {
+      lastErr = e;
+      console.error(
+        `gemini attempt ${attempt}/${GEN_ATTEMPTS} failed: ${e?.message ?? e}`,
+      );
+      if (attempt < GEN_ATTEMPTS) await sleep(1500 * attempt);
+    }
+  }
+  throw lastErr;
+}
+
 const pool = new pg.Pool({
   host: process.env.PGHOST ?? "supabase-db",
   port: Number(process.env.PGPORT ?? 5432),
@@ -211,15 +251,42 @@ async function schemaForPatient(patientId) {
 // ---------------------------------------------------------------------------
 // Gemini calls (mirror of the former src/lib/paperwork/gemini.ts)
 // ---------------------------------------------------------------------------
+// Return the first *balanced* JSON value ({...} or [...]) found in `text`,
+// ignoring any prose before it or trailing junk after it. Lite models sometimes
+// emit a stray extra brace (e.g. "...}\n}") after the real object, which makes a
+// naive JSON.parse fail even though the leading object is perfectly valid.
+function sliceBalancedJson(text) {
+  const start = text.search(/[{[]/);
+  if (start < 0) return text;
+  const open = text[start];
+  const close = open === "{" ? "}" : "]";
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  for (let i = start; i < text.length; i++) {
+    const c = text[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === "\\") esc = true;
+      else if (c === '"') inStr = false;
+    } else if (c === '"') {
+      inStr = true;
+    } else if (c === open) {
+      depth++;
+    } else if (c === close) {
+      depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+  return text.slice(start);
+}
+
 function parseJson(raw, ctx) {
   if (!raw) throw new Error(`Gemini returned an empty response for ${ctx}.`);
   let text = raw.trim();
   const fence = text.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
   if (fence) text = fence[1].trim();
-  if (!text.startsWith("{") && !text.startsWith("[")) {
-    const m = text.match(/[{[][\s\S]*[}\]]/);
-    if (m) text = m[0];
-  }
+  text = sliceBalancedJson(text);
   try {
     return JSON.parse(text);
   } catch {
@@ -280,7 +347,7 @@ async function extractPatientJson({ files, text, schema }) {
   if (text && text.trim()) parts.push({ text: `ADDITIONAL NOTES FROM USER:\n${text.trim()}` });
   if (files?.length) parts.push(...fileParts(files));
 
-  const res = await ai.models.generateContent({
+  const res = await generateContent({
     model: MODEL,
     contents: [{ role: "user", parts }],
     config: { responseMimeType: "application/json", temperature: 0 },
@@ -331,12 +398,26 @@ async function templateToHtml({ file, name, logoDataUri, logoCompanyName }) {
     JSON.stringify(SCHEMA_FOR_PROMPT, null, 2),
   ].join("\n");
 
-  const res = await ai.models.generateContent({
+  const res = await generateContent({
     model: MODEL,
     contents: [{ role: "user", parts: [{ text: instruction }, ...fileParts([file])] }],
-    config: { responseMimeType: "application/json", temperature: 0 },
+    config: {
+      responseMimeType: "application/json",
+      temperature: 0,
+      maxOutputTokens: 65536,
+    },
   });
-  const parsed = parseJson(res.text, "template conversion");
+  const finishReason = res.candidates?.[0]?.finishReason;
+  let parsed;
+  try {
+    parsed = parseJson(res.text, "template conversion");
+  } catch (e) {
+    // No PHI on a blank template; log shape only to diagnose truncation/blocks.
+    console.error(
+      `template conversion parse failed: finishReason=${finishReason ?? "?"} textLen=${res.text?.length ?? 0}`,
+    );
+    throw e;
+  }
   let html = parsed.html ?? "";
   if (hasBranding) html = ensureLogoToken(html);
   return {
@@ -396,7 +477,7 @@ async function fillTemplate({ templateHtml, requiredFields, patientData }) {
     templateHtml,
   ].join("\n");
 
-  const res = await ai.models.generateContent({
+  const res = await generateContent({
     model: MODEL,
     contents: [{ role: "user", parts: [{ text: instruction }] }],
     config: { temperature: 0 },
