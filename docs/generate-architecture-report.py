@@ -140,11 +140,11 @@ def build():
         ("Live app URL", "https://main.d2na0dxbmaa2o4.amplifyapp.com"),
         ("Amplify app ID", "d2na0dxbmaa2o4"),
         ("AWS region", "us-west-2 (US West, Oregon)"),
-        ("EC2 instance ID", "i-0c55b5678f0ec6cf7"),
-        ("EC2 public IP (Elastic IP)", "44.253.198.43"),
+        ("EC2 instance ID", "i-0ceb5f7f69abea322"),
+        ("EC2 public IP (Elastic IP)", "32.185.154.166"),
         ("Instance type", "t4g.small, Ubuntu 22.04, 30 GB encrypted EBS"),
-        ("Security group", "sg-07721f9fedc45d2fa (choice-tracker-sg)"),
-        ("Supabase API (Kong)", "http://44.253.198.43:8000"),
+        ("Security group", "sg-09cf02af40a8a785f (choice-tracker-sg-v2)"),
+        ("Supabase API (Kong)", "http://32.185.154.166:8000"),
         ("Supabase install path", "/opt/choice-supabase"),
         ("Postgres port", "5432 - internal to Docker only; NOT open to the public internet"),
     ]:
@@ -169,7 +169,7 @@ def build():
 
     pdf.section_title("4. Where Is the Database Hosted?")
     pdf.body(
-        "The authoritative database is hosted on the AWS EC2 instance at 44.253.198.43. It runs inside Docker "
+        "The authoritative database is hosted on the AWS EC2 instance at 32.185.154.166. It runs inside Docker "
         "containers as part of the self-hosted Supabase stack cloned to /opt/choice-supabase on that server."
     )
     pdf.sub_title("Is Supabase on this computer?")
@@ -177,7 +177,7 @@ def build():
         "No - not for production or current local development on this machine. Findings from this workstation:\n"
         "  - Supabase CLI is NOT installed (supabase command not found).\n"
         "  - Docker Desktop is NOT running (no local containers).\n"
-        "  - .env.local points NEXT_PUBLIC_SUPABASE_URL to http://44.253.198.43:8000 (remote EC2).\n\n"
+        "  - .env.local points NEXT_PUBLIC_SUPABASE_URL to http://32.185.154.166:8000 (remote EC2).\n\n"
         "The repo includes supabase/config.toml and supabase/migrations/ for local development via "
         "'supabase start' (ports 54321/54322/54323), but that local stack is optional and is not currently "
         "active on this machine. When used, it would run Postgres in Docker on localhost - separate from the "
@@ -219,7 +219,7 @@ def build():
     pdf.bullet("SITE_URL / API_EXTERNAL_URL / SUPABASE_PUBLIC_URL - OAuth redirect configuration.")
 
     pdf.sub_title("Current workstation (.env.local) status")
-    pdf.bullet("NEXT_PUBLIC_SUPABASE_URL = http://44.253.198.43:8000 (remote EC2, not localhost).")
+    pdf.bullet("NEXT_PUBLIC_SUPABASE_URL = http://32.185.154.166:8000 (remote EC2, not localhost).")
     pdf.bullet("NEXT_PUBLIC_SUPABASE_ANON_KEY = configured (212-character JWT).")
     pdf.bullet("SUPABASE_SERVICE_ROLE_KEY = not set in .env.local (admin user create/delete requires it).")
     pdf.bullet("NEXT_PUBLIC_AUTH_EMAIL_ENABLED = true; Azure and Google = false.")

@@ -427,7 +427,7 @@ Explicit non-goals, all to keep v1 cheap, fast to ship, and free of HIPAA-tier i
 
 ## 16. Going to production
 
-**The AWS infrastructure is already deployed** (self-hosted Supabase on EC2 `44.253.198.43` / instance `i-0c55b5678f0ec6cf7` in us-west-2, Next.js on Amplify `d2na0dxbmaa2o4` → `https://main.d2na0dxbmaa2o4.amplifyapp.com`). The as-built ops runbook is `infra/aws/DEPLOYMENT.md`; `ARCHITECTURE.md` §3 has the non-technical AWS console guide. Amplify auto-builds from branch `main`; **schema changes require applying the migration on EC2 by hand** (push does not migrate the DB).
+**The AWS infrastructure is already deployed** (self-hosted Supabase on EC2 `32.185.154.166` / instance `i-0ceb5f7f69abea322` in us-west-2, Next.js on Amplify `d2na0dxbmaa2o4` → `https://main.d2na0dxbmaa2o4.amplifyapp.com`). The as-built ops runbook is `infra/aws/DEPLOYMENT.md`; `ARCHITECTURE.md` §3 has the non-technical AWS console guide. Amplify auto-builds from branch `main`; **schema changes require applying the migration on EC2 by hand** (push does not migrate the DB).
 
 Status of the production checklist:
 

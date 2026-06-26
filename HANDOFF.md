@@ -14,7 +14,7 @@ The app is no longer "about to migrate" — it's deployed. Identifiers (also in 
 |---|---|
 | Live app URL | `https://main.d2na0dxbmaa2o4.amplifyapp.com` |
 | Amplify app ID | `d2na0dxbmaa2o4` (builds from branch `main`) |
-| Database server (EC2) | instance `i-0c55b5678f0ec6cf7`, Elastic IP `44.253.198.43` |
+| Database server (EC2) | instance `i-0ceb5f7f69abea322`, Elastic IP `32.185.154.166` |
 | AWS region | `us-west-2` (US West / Oregon) |
 | Supabase install path | `/opt/choice-supabase` on the EC2 box |
 | Ops runbook | `infra/aws/DEPLOYMENT.md` (SSH, env, migration scripts incl. browser/Windows helpers) |
@@ -89,7 +89,7 @@ The customer (Choice) doesn't currently pay for the dev work; we're doing it for
 - Seed: 5 demo users (DeAnne / Matt / Steve / Tara / Jack, all `password123`), payers, all template rows, 9 patients with varied states, supervising_atp_id wired for Tara → Steve and Jack → Matt. In `supabase/seed.sql`.
 - Next.js front-end: login, dashboard with priority queue + Top-5 (with bounce/snooze), patient list, patient detail with computed next-step + patient delete, **reactive** new-patient form (rep selection auto-fills ATP), sent-for-signature flow, admin screen for user activation + roles + ATP supervisor + payer-type management. App passes `npx tsc --noEmit` and `npx next build`.
 - Default 14-day due dates wired into both server-action and seed-side task instantiation.
-- **Deployed to production on AWS:** self-hosted Supabase on EC2 (`44.253.198.43`, us-west-2) + Next.js on Amplify (`https://main.d2na0dxbmaa2o4.amplifyapp.com`). See the "Production deployment" section above and `infra/aws/DEPLOYMENT.md`.
+- **Deployed to production on AWS:** self-hosted Supabase on EC2 (`32.185.154.166`, us-west-2) + Next.js on Amplify (`https://main.d2na0dxbmaa2o4.amplifyapp.com`). See the "Production deployment" section above and `infra/aws/DEPLOYMENT.md`.
 - Local dev: works at `localhost:3000`. `npm run dev` boots Next, talks to whichever Supabase URL is in `.env.local`.
 - Pushed to GitHub: `https://github.com/benpinoli/Choice-Healthcare-Task-System`. **Active branch: `main`** (Amplify deploys from it). `build/v1-tracker` is stale (~34 commits behind `main`) — don't branch from it.
 

@@ -2,7 +2,7 @@
 # Usage:
 #   $env:AMPLIFY_APP_ID = "d2na0dxbmaa2o4"
 #   $env:AMPLIFY_BRANCH = "main"
-#   $env:EC2_SUPABASE_URL = "http://44.253.198.43:8000"
+#   $env:EC2_SUPABASE_URL = "http://32.185.154.166:8000"
 #   $env:AMPLIFY_APP_URL = "https://main.d2na0dxbmaa2o4.amplifyapp.com"
 #   $env:SUPABASE_ANON_KEY = "<from EC2 /opt/choice-supabase/.env>"
 #   .\infra\aws\scripts\update-amplify-env.ps1

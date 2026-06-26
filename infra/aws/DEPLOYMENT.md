@@ -5,11 +5,11 @@
 
 | Resource | Value |
 |----------|--------|
-| Elastic IP | `44.253.198.43` |
-| Instance | `i-0c55b5678f0ec6cf7` (t4g.small) |
-| Security group | `sg-07721f9fedc45d2fa` |
+| Elastic IP | `32.185.154.166` |
+| Instance | `i-0ceb5f7f69abea322` (t4g.small) |
+| Security group | `sg-09cf02af40a8a785f` |
 | SSH key | `%USERPROFILE%\.ssh\choice-tracker-key.pem` |
-| Supabase API (Kong) | `http://44.253.198.43:8000` |
+| Supabase API (Kong) | `http://32.185.154.166:8000` |
 | Install path on server | `/opt/choice-supabase` |
 | Amplify app | `d2na0dxbmaa2o4` → `https://main.d2na0dxbmaa2o4.amplifyapp.com` |
 
@@ -26,7 +26,7 @@ Fresh installs: `apply-schema.sh` or `remote-setup-all.sh` runs **all** `supabas
 You only need AWS Console access and region **us-west-2**.
 
 1. [AWS Console](https://console.aws.amazon.com/) → search **EC2** → **Instances**.
-2. Select instance **`i-0c55b5678f0ec6cf7`** (IP `44.253.198.43`).
+2. Select instance **`i-0ceb5f7f69abea322`** (IP `32.185.154.166`).
 3. Click **Connect** (top right).
 4. Tab **EC2 Instance Connect** → **Connect** (opens a terminal in the browser).
 5. Run these commands one block at a time (or paste the whole helper script):
@@ -42,7 +42,7 @@ When it finishes, try **Sent for signature** in the Amplify app again.
 ### Option B — SSH from Windows (`.pem` key)
 
 ```powershell
-cd "C:\Users\pinol\OneDrive\Desktop\Choice Healthcare\Choice-Healthcare-Task-System"
+cd "C:\Users\pinol\Documents\Choice Healthcare\Choice-Healthcare-Task-System"
 .\infra\aws\scripts\apply-migrations-from-windows.ps1
 ```
 
@@ -55,7 +55,7 @@ The script will:
 Manual SSH test:
 
 ```powershell
-ssh -i $env:USERPROFILE\.ssh\choice-tracker-key.pem ubuntu@44.253.198.43
+ssh -i $env:USERPROFILE\.ssh\choice-tracker-key.pem ubuntu@32.185.154.166
 ```
 
 ### Can't SSH? — quick fixes
@@ -63,7 +63,7 @@ ssh -i $env:USERPROFILE\.ssh\choice-tracker-key.pem ubuntu@44.253.198.43
 | Symptom | What to try |
 |--------|-------------|
 | `Permission denied (publickey)` | Wrong/missing `.pem`, or key never saved when EC2 was created. Use **Option A** (browser) or get the `.pem` from whoever ran `launch-ec2.ps1`. |
-| `Connection timed out` | Security group blocks port 22 from your IP. Run `apply-migrations-from-windows.ps1` (updates SG), or in EC2 → Security groups → `choice-tracker-sg` → Inbound → SSH from **My IP**. |
+| `Connection timed out` | Security group blocks port 22 from your IP. Run `apply-migrations-from-windows.ps1` (updates SG), or in EC2 → Security groups → `choice-tracker-sg-v2` → Inbound → SSH from **My IP**. |
 | `UNPROTECTED PRIVATE KEY FILE` | Run `.\infra\aws\scripts\fix-pem.ps1` or `icacls %USERPROFILE%\.ssh\choice-tracker-key.pem /inheritance:r /grant:r "%USERNAME%:(R)"` |
 | No `.pem` at all | **Option A** — EC2 Instance Connect in the browser does not need the file. |
 
@@ -75,7 +75,7 @@ Your **My IP** rule only allows SSH from your house/office. **CloudShell** and t
 
 #### C1. Temporary firewall (2 minutes)
 
-1. EC2 → **Security Groups** → **choice-tracker-sg** (`sg-07721f9fedc45d2fa`).
+1. EC2 → **Security Groups** → **choice-tracker-sg-v2** (`sg-09cf02af40a8a785f`).
 2. **Inbound rules** → **Edit inbound rules** → **Add rule**:
    - Type: **SSH**, Port **22**, Source: **Anywhere-IPv4** (`0.0.0.0/0`)
    - Description: `TEMP migration — delete after`
@@ -95,10 +95,10 @@ Paste this **whole block** into CloudShell and press Enter:
 export AWS_DEFAULT_REGION=us-west-2
 ssh-keygen -t rsa -f ~/ec2-temp -N "" -q
 aws ec2-instance-connect send-ssh-public-key \
-  --instance-id i-0c55b5678f0ec6cf7 \
+  --instance-id i-0ceb5f7f69abea322 \
   --instance-os-user ubuntu \
   --ssh-public-key "file://$HOME/ec2-temp.pub"
-ssh -i ~/ec2-temp -o StrictHostKeyChecking=no -o ConnectTimeout=15 ubuntu@44.253.198.43
+ssh -i ~/ec2-temp -o StrictHostKeyChecking=no -o ConnectTimeout=15 ubuntu@32.185.154.166
 ```
 
 You should see an `ubuntu@ip-...` prompt. (If `send-ssh-public-key` errors with **AccessDenied**, your IAM user needs `ec2-instance-connect:SendSSHPublicKey` — ask the account admin.)
@@ -122,7 +122,7 @@ You can keep **My IP** on port 22 for future admin work.
 ## 2. Local dev (`.env.local`)
 
 ```env
-NEXT_PUBLIC_SUPABASE_URL=http://44.253.198.43:8000
+NEXT_PUBLIC_SUPABASE_URL=http://32.185.154.166:8000
 NEXT_PUBLIC_SUPABASE_ANON_KEY=<from EC2 .env>
 NEXT_PUBLIC_AUTH_EMAIL_ENABLED=true
 NEXT_PUBLIC_AUTH_AZURE_ENABLED=false
@@ -133,7 +133,7 @@ Copy from [`.env.aws.local`](../../.env.aws.local).
 SSH to read keys:
 
 ```bash
-ssh -i ~/.ssh/choice-tracker-key.pem ubuntu@44.253.198.43
+ssh -i ~/.ssh/choice-tracker-key.pem ubuntu@32.185.154.166
 sudo grep -E '^ANON_KEY=|^SERVICE_ROLE_KEY=' /opt/choice-supabase/.env
 ```
 
@@ -145,7 +145,7 @@ Browsers block HTTPS Amplify → HTTP EC2. The app proxies via Next.js:
 
 | Variable | Example |
 |----------|---------|
-| `SUPABASE_INTERNAL_URL` | `http://44.253.198.43:8000` |
+| `SUPABASE_INTERNAL_URL` | `http://32.185.154.166:8000` |
 | `NEXT_PUBLIC_SUPABASE_URL` | `https://main.d2na0dxbmaa2o4.amplifyapp.com/supabase` |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | EC2 `ANON_KEY` |
 
@@ -154,7 +154,7 @@ PowerShell helper (after setting `SUPABASE_ANON_KEY`):
 ```powershell
 $env:AMPLIFY_APP_ID = "d2na0dxbmaa2o4"
 $env:AMPLIFY_BRANCH = "main"
-$env:EC2_SUPABASE_URL = "http://44.253.198.43:8000"
+$env:EC2_SUPABASE_URL = "http://32.185.154.166:8000"
 $env:AMPLIFY_APP_URL = "https://main.d2na0dxbmaa2o4.amplifyapp.com"
 $env:SUPABASE_ANON_KEY = "<paste ANON_KEY>"
 .\infra\aws\scripts\update-amplify-env.ps1
@@ -192,6 +192,6 @@ See [caddy/Caddyfile](./caddy/Caddyfile). Then set `NEXT_PUBLIC_SUPABASE_URL=htt
 ## Tear down (cost control)
 
 ```powershell
-aws ec2 terminate-instances --region us-west-2 --instance-ids i-0c55b5678f0ec6cf7
-aws ec2 release-address --region us-west-2 --allocation-id <eip-allocation-id>
+aws ec2 terminate-instances --region us-west-2 --instance-ids i-0ceb5f7f69abea322
+aws ec2 release-address --region us-west-2 --allocation-id eipalloc-0ebe51c98d326a9bf
 ```

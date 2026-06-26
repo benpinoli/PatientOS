@@ -32,8 +32,8 @@ This section is for people who use the tracker daily and have AWS console access
 | Piece | Where to look |
 |-------|----------------|
 | Live app URL | `https://main.d2na0dxbmaa2o4.amplifyapp.com` |
-| Database server IP | `44.253.198.43` (Elastic IP on the EC2 instance) |
-| EC2 instance ID | `i-0c55b5678f0ec6cf7` |
+| Database server IP | `32.185.154.166` (Elastic IP on the EC2 instance) |
+| EC2 instance ID | `i-0ceb5f7f69abea322` |
 | AWS region | **US West (Oregon)** — `us-west-2` |
 | Amplify app ID | `d2na0dxbmaa2o4` |
 | Supabase install path on the server | `/opt/choice-supabase` |
@@ -49,15 +49,15 @@ Operational detail (SSH, env vars, migration scripts): [`infra/aws/DEPLOYMENT.md
    - Menu ☰ → **Compute** → **EC2**.
 4. In the left sidebar, click **Instances** → **Instances**.
 5. Find the tracker database server:
-   - Look for instance ID **`i-0c55b5678f0ec6cf7`**, or
-   - Look for **Public IPv4 address** **`44.253.198.43`**, or
+   - Look for instance ID **`i-0ceb5f7f69abea322`**, or
+   - Look for **Public IPv4 address** **`32.185.154.166`**, or
    - Look for a name tag like `choice-supabase` if your team added one.
 
 That row is “the EC2 box.” You do **not** need to start/stop it for normal app use. Stopping it would take the database offline for everyone.
 
 Other useful EC2 sidebar items (read-only for most users):
 
-- **Elastic IPs** — shows `44.253.198.43` attached to the instance (stable address).
+- **Elastic IPs** — shows `32.185.154.166` attached to the instance (stable address).
 - **Security groups** — firewall rules (usually left to whoever set up the server).
 
 ### How to find Amplify (the website hosting)
@@ -82,7 +82,7 @@ Rule of thumb:
 
 You do **not** need a `.pem` file or PuTTY if you use **EC2 Instance Connect** (terminal inside the AWS website):
 
-1. EC2 → Instances → `i-0c55b5678f0ec6cf7` → **Connect** → **EC2 Instance Connect** → **Connect**.
+1. EC2 → Instances → `i-0ceb5f7f69abea322` → **Connect** → **EC2 Instance Connect** → **Connect**.
 2. Paste and run the one-liner from [`infra/aws/DEPLOYMENT.md`](infra/aws/DEPLOYMENT.md) § “Option A — Browser terminal”.
 
 That downloads and applies migrations `0004`–`0011` (including **Awaiting signature**).

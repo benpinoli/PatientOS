@@ -4,8 +4,8 @@
 # If SSH still fails, use the browser method in DEPLOYMENT.md § "Can't SSH?"
 param(
   [string]$Region = "us-west-2",
-  [string]$InstanceId = "i-0c55b5678f0ec6cf7",
-  [string]$HostIp = "44.253.198.43",
+  [string]$InstanceId = "i-0ceb5f7f69abea322",
+  [string]$HostIp = "32.185.154.166",
   [string]$KeyName = "choice-tracker-key",
   [string]$SgName = "choice-tracker-sg",
   [string]$SshUser = "ubuntu"

@@ -2,7 +2,7 @@
 # Paste this entire script into the AWS Console terminal (no local SSH required).
 #
 # How to open the terminal:
-#   EC2 → Instances → select i-0c55b5678f0ec6cf7 → Connect →
+#   EC2 → Instances → select i-0ceb5f7f69abea322 → Connect →
 #   "EC2 Instance Connect" tab → Connect
 #
 # Downloads pending migrations from GitHub main and applies them to Postgres in Docker.
