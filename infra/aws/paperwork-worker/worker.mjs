@@ -139,6 +139,76 @@ function mergePatientData(base, incoming) {
 }
 
 // ---------------------------------------------------------------------------
+// JSON field templates: build the AI extraction shape from a saved definition
+// (mirror of src/lib/paperwork/template-def.ts). Falls back to SCHEMA_FOR_PROMPT
+// when a patient's type has no saved template.
+// ---------------------------------------------------------------------------
+function setPath(obj, path, value) {
+  const keys = path.split(".");
+  const clone = { ...obj };
+  let cursor = clone;
+  for (let i = 0; i < keys.length - 1; i++) {
+    const key = keys[i];
+    const existing = cursor[key];
+    cursor[key] =
+      existing && typeof existing === "object" && !Array.isArray(existing)
+        ? { ...existing }
+        : {};
+    cursor = cursor[key];
+  }
+  cursor[keys[keys.length - 1]] = value;
+  return clone;
+}
+function exampleValueForKind(field) {
+  switch (field.kind) {
+    case "number":
+      return null;
+    case "boolean":
+      return true;
+    case "list":
+      return [];
+    case "date":
+      return "YYYY-MM-DD";
+    case "choice":
+      return (field.options ?? []).join(" / ");
+    default:
+      return "";
+  }
+}
+function buildExampleShape(def) {
+  let out = {};
+  for (const section of def?.sections ?? []) {
+    for (const field of section.fields ?? []) {
+      const p = field.path ? `${section.key}.${field.path}` : section.key;
+      out = setPath(out, p, exampleValueForKind(field));
+    }
+  }
+  return out;
+}
+async function schemaForPatient(patientId) {
+  if (!patientId) return SCHEMA_FOR_PROMPT;
+  try {
+    const res = await pool.query(
+      `select jt.definition
+         from public.patients p
+         join public.payers py on py.id = p.payer_id
+         join public.paperwork_json_templates jt
+           on jt.payer_type = py.type and jt.is_default
+        where p.id = $1
+        limit 1`,
+      [patientId],
+    );
+    const def = res.rows[0]?.definition;
+    if (def && Array.isArray(def.sections) && def.sections.length > 0) {
+      return buildExampleShape(def);
+    }
+  } catch (e) {
+    console.error("schemaForPatient error:", e.message);
+  }
+  return SCHEMA_FOR_PROMPT;
+}
+
+// ---------------------------------------------------------------------------
 // Gemini calls (mirror of the former src/lib/paperwork/gemini.ts)
 // ---------------------------------------------------------------------------
 function parseJson(raw, ctx) {
@@ -183,7 +253,7 @@ const logoBlock = (dataUri, companyName) => {
 const embedLogo = (html, dataUri, companyName) =>
   !html ? html : html.split(LOGO_TOKEN).join(logoBlock(dataUri, companyName));
 
-async function extractPatientJson({ files, text }) {
+async function extractPatientJson({ files, text, schema }) {
   const instruction = [
     "You are a medical intake assistant for a power-wheelchair documentation workflow.",
     "Extract patient information from the provided documents and/or notes and return it",
@@ -203,7 +273,7 @@ async function extractPatientJson({ files, text }) {
     "- Dates must be YYYY-MM-DD.",
     "",
     "SCHEMA:",
-    JSON.stringify(SCHEMA_FOR_PROMPT, null, 2),
+    JSON.stringify(schema ?? SCHEMA_FOR_PROMPT, null, 2),
   ].join("\n");
 
   const parts = [{ text: instruction }];
@@ -327,9 +397,11 @@ async function fillTemplate({ templateHtml, requiredFields, patientData }) {
 // ---------------------------------------------------------------------------
 async function processJob(job) {
   if (job.kind === "extract") {
+    const schema = await schemaForPatient(job.patient_id);
     const incoming = await extractPatientJson({
       files: job.input?.files ?? [],
       text: job.input?.text ?? "",
+      schema,
     });
     const existing = await pool.query(
       "select data from public.paperwork_patient_data where patient_id = $1",

@@ -11,9 +11,11 @@ import type {
 } from "@/lib/paperwork/schema";
 import type {
   PaperworkDocument,
+  PaperworkJsonTemplate,
   PaperworkLogo,
   PaperworkPatientData,
 } from "@/lib/db-types";
+import type { JsonTemplateDefinition } from "@/lib/paperwork/template-def";
 
 export type PatientPaperwork = {
   data: PaperworkPatientData;
@@ -223,6 +225,94 @@ export async function deleteTemplate(
     return { ok: true, value: true };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Failed to delete." };
+  }
+}
+
+/** Creates a JSON field template for a patient type (first for a type = default). */
+export async function createJsonTemplate(
+  payerType: string,
+  name: string,
+  definition: JsonTemplateDefinition,
+): Promise<ActionResult<PaperworkJsonTemplate>> {
+  try {
+    const { supabase, user } = await requireAuthedClient();
+    const { count } = await supabase
+      .from("paperwork_json_templates")
+      .select("id", { count: "exact", head: true })
+      .eq("payer_type", payerType);
+    const { data, error } = await supabase
+      .from("paperwork_json_templates")
+      .insert({
+        payer_type: payerType,
+        name: name.trim() || "Template",
+        definition,
+        is_default: (count ?? 0) === 0,
+        created_by: user.id,
+      })
+      .select("*")
+      .single();
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, value: data as PaperworkJsonTemplate };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Failed to create template." };
+  }
+}
+
+/** Updates a JSON field template; setting it default unsets others of its type. */
+export async function updateJsonTemplate(
+  id: string,
+  patch: { name?: string; definition?: JsonTemplateDefinition; is_default?: boolean },
+): Promise<ActionResult<PaperworkJsonTemplate>> {
+  try {
+    const { supabase } = await requireAuthedClient();
+
+    if (patch.is_default) {
+      const { data: row } = await supabase
+        .from("paperwork_json_templates")
+        .select("payer_type")
+        .eq("id", id)
+        .maybeSingle();
+      if (row?.payer_type) {
+        // Clear the current default for this type before promoting this one,
+        // to satisfy the one-default-per-type unique index.
+        await supabase
+          .from("paperwork_json_templates")
+          .update({ is_default: false })
+          .eq("payer_type", row.payer_type)
+          .neq("id", id);
+      }
+    }
+
+    const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (patch.name !== undefined) update.name = patch.name.trim() || "Template";
+    if (patch.definition !== undefined) update.definition = patch.definition;
+    if (patch.is_default !== undefined) update.is_default = patch.is_default;
+
+    const { data, error } = await supabase
+      .from("paperwork_json_templates")
+      .update(update)
+      .eq("id", id)
+      .select("*")
+      .single();
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, value: data as PaperworkJsonTemplate };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Failed to update template." };
+  }
+}
+
+/** Deletes a JSON field template. */
+export async function deleteJsonTemplate(id: string): Promise<ActionResult<true>> {
+  try {
+    const { supabase } = await requireAuthedClient();
+    const { error } = await supabase
+      .from("paperwork_json_templates")
+      .delete()
+      .eq("id", id);
+    if (error) return { ok: false, error: error.message };
+    return { ok: true, value: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Failed to delete template." };
   }
 }
 

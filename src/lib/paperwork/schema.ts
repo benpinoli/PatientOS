@@ -9,6 +9,12 @@
 // Keep this in sync with the example file if the schema evolves.
 
 import type { PaperworkPatientData } from "@/lib/db-types";
+import {
+  buildEmptyData,
+  fullFieldPath,
+  type FieldKind,
+  type JsonTemplateDefinition,
+} from "@/lib/paperwork/template-def";
 
 export const SCHEMA_FOR_PROMPT = {
   patient_demographics: {
@@ -202,8 +208,10 @@ export type FieldStatus = {
   label: string;
   known: boolean;
   value: unknown;
-  /** "text" | "number" | "boolean" | "list" — drives the editor input. */
-  kind: "text" | "number" | "boolean" | "list";
+  /** Drives the editor input. */
+  kind: FieldKind;
+  /** Allowed values for `choice` fields. */
+  options?: string[];
 };
 
 export type SectionCompleteness = {
@@ -219,13 +227,6 @@ export type Completeness = {
   knownCount: number;
   totalCount: number;
 };
-
-function leafKind(schemaValue: unknown): FieldStatus["kind"] {
-  if (Array.isArray(schemaValue)) return "list";
-  if (typeof schemaValue === "number") return "number";
-  if (typeof schemaValue === "boolean") return "boolean";
-  return "text";
-}
 
 /** Reads a dotted path out of an arbitrary object, returning undefined if absent. */
 export function getValueAtPath(obj: unknown, path: string): unknown {
@@ -266,58 +267,126 @@ function isSchemaLeaf(schemaValue: unknown): boolean {
   return typeof schemaValue !== "object";
 }
 
-function walkSection(
-  sectionKey: string,
-  schemaNode: Record<string, unknown>,
-  data: unknown,
-): FieldStatus[] {
-  const fields: FieldStatus[] = [];
-
-  const recurse = (
-    node: Record<string, unknown>,
-    pathSegments: string[],
-    labelSegments: string[],
-  ) => {
-    for (const [key, schemaValue] of Object.entries(node)) {
-      const nextPath = [...pathSegments, key];
-      const nextLabels = [...labelSegments, key];
-      if (isSchemaLeaf(schemaValue)) {
-        const value = getValueAtPath(data, [sectionKey, ...nextPath].join("."));
-        fields.push({
-          path: [sectionKey, ...nextPath].join("."),
-          label: buildLabel(nextLabels),
-          known: isLeafKnown(value),
-          value: value ?? null,
-          kind: leafKind(schemaValue),
-        });
-      } else {
-        recurse(schemaValue as Record<string, unknown>, nextPath, nextLabels);
-      }
+/** Derives the field kind (+ options) from a raw schema example value. */
+function deriveKind(value: unknown): { kind: FieldKind; options?: string[] } {
+  if (Array.isArray(value)) return { kind: "list" };
+  if (value === null) return { kind: "number" };
+  if (typeof value === "number") return { kind: "number" };
+  if (typeof value === "boolean") return { kind: "boolean" };
+  if (typeof value === "string") {
+    const t = value.trim();
+    if (t === "") return { kind: "text" };
+    if (t === DATE_PLACEHOLDER) return { kind: "date" };
+    if (t.includes("/")) {
+      return {
+        kind: "choice",
+        options: t.split("/").map((s) => s.trim()).filter(Boolean),
+      };
     }
-  };
+    return { kind: "text" };
+  }
+  return { kind: "text" };
+}
 
-  recurse(schemaNode, [], []);
-  return fields;
+/**
+ * Built-in field structure, derived from `SCHEMA_FOR_PROMPT`. Used as the default
+ * definition for any patient type that has no saved JSON template yet, so the
+ * out-of-the-box behavior is identical to before templates existed.
+ */
+export const DEFAULT_DEFINITION: JsonTemplateDefinition = {
+  sections: Object.entries(SCHEMA_FOR_PROMPT).map(([sectionKey, schemaNode]) => {
+    const fields: JsonTemplateDefinition["sections"][number]["fields"] = [];
+    const recurse = (
+      node: Record<string, unknown>,
+      pathSegments: string[],
+      labelSegments: string[],
+    ) => {
+      for (const [key, value] of Object.entries(node)) {
+        const nextPath = [...pathSegments, key];
+        const nextLabels = [...labelSegments, key];
+        if (isSchemaLeaf(value)) {
+          const { kind, options } = deriveKind(value);
+          fields.push({
+            path: nextPath.join("."),
+            label: buildLabel(nextLabels),
+            kind,
+            ...(options ? { options } : {}),
+          });
+        } else {
+          recurse(value as Record<string, unknown>, nextPath, nextLabels);
+        }
+      }
+    };
+    recurse(schemaNode as Record<string, unknown>, [], []);
+    return {
+      key: sectionKey,
+      label: SECTION_LABELS[sectionKey] ?? humanizeSegment(sectionKey),
+      fields,
+    };
+  }),
+};
+
+/** Decides whether a leaf value counts as "known", per the field's kind. */
+function isLeafKnownByKind(
+  value: unknown,
+  kind: FieldKind,
+  options?: string[],
+): boolean {
+  if (value === null || value === undefined) return false;
+  switch (kind) {
+    case "boolean":
+      return typeof value === "boolean";
+    case "number":
+      return typeof value === "number" && !Number.isNaN(value);
+    case "list":
+      return Array.isArray(value) && value.length > 0;
+    case "date":
+      return (
+        typeof value === "string" &&
+        value.trim() !== "" &&
+        value.trim() !== DATE_PLACEHOLDER
+      );
+    case "choice": {
+      if (typeof value !== "string") return false;
+      const t = value.trim();
+      if (t === "") return false;
+      if (options && options.join(" / ") === t) return false;
+      if (t.includes(" / ")) return false;
+      return true;
+    }
+    default:
+      return typeof value === "string" ? !isPlaceholderString(value) : isLeafKnown(value);
+  }
 }
 
 /** Computes the known/unknown checklist for a patient's structured JSON. */
-export function evaluateCompleteness(data: PaperworkPatientData | null | undefined): Completeness {
+export function evaluateCompleteness(
+  data: PaperworkPatientData | null | undefined,
+  definition: JsonTemplateDefinition = DEFAULT_DEFINITION,
+): Completeness {
   const sections: SectionCompleteness[] = [];
   let knownCount = 0;
   let totalCount = 0;
 
-  for (const [sectionKey, schemaNode] of Object.entries(SCHEMA_FOR_PROMPT)) {
-    const fields = walkSection(
-      sectionKey,
-      schemaNode as Record<string, unknown>,
-      data ?? {},
-    );
+  for (const section of definition.sections) {
+    const fields: FieldStatus[] = section.fields.map((f) => {
+      const path = fullFieldPath(section.key, f.path);
+      const value = getValueAtPath(data ?? {}, path);
+      return {
+        path,
+        label: f.label,
+        known: isLeafKnownByKind(value, f.kind, f.options),
+        value: value ?? null,
+        kind: f.kind,
+        ...(f.options ? { options: f.options } : {}),
+      };
+    });
     const sectionKnown = fields.filter((f) => f.known).length;
     knownCount += sectionKnown;
     totalCount += fields.length;
     sections.push({
-      key: sectionKey,
-      label: SECTION_LABELS[sectionKey] ?? humanizeSegment(sectionKey),
+      key: section.key,
+      label: section.label,
       fields,
       knownCount: sectionKnown,
       totalCount: fields.length,
@@ -358,23 +427,8 @@ export function mergePatientData(
 }
 
 /** Produces an empty patient JSON skeleton (blanked leaves) for a new record. */
-export function emptyPatientData(): PaperworkPatientData {
-  const blank = (node: unknown): unknown => {
-    if (Array.isArray(node)) return [];
-    if (node === null) return null;
-    if (typeof node === "object") {
-      const out: Record<string, unknown> = {};
-      for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
-        out[k] = blank(v);
-      }
-      return out;
-    }
-    if (typeof node === "string") return "";
-    if (typeof node === "number") return null;
-    // Yes/No fields start unrecorded (null) so the checklist shows a red ✗
-    // until someone explicitly picks Yes or No.
-    if (typeof node === "boolean") return null;
-    return null;
-  };
-  return blank(SCHEMA_FOR_PROMPT) as PaperworkPatientData;
+export function emptyPatientData(
+  definition: JsonTemplateDefinition = DEFAULT_DEFINITION,
+): PaperworkPatientData {
+  return buildEmptyData(definition) as PaperworkPatientData;
 }

@@ -8,6 +8,7 @@ import {
   type FieldStatus,
 } from "@/lib/paperwork/schema";
 import type { PaperworkPatientData } from "@/lib/db-types";
+import type { JsonTemplateDefinition } from "@/lib/paperwork/template-def";
 import { savePatientData } from "./actions";
 
 function listToText(value: unknown): string {
@@ -36,10 +37,12 @@ function textToList(text: string): unknown[] {
 export function CompletenessPanel({
   patientId,
   data,
+  definition,
   onDataChange,
 }: {
   patientId: string;
   data: PaperworkPatientData;
+  definition: JsonTemplateDefinition;
   onDataChange: (next: PaperworkPatientData) => void;
 }) {
   const [draft, setDraft] = useState<PaperworkPatientData>(data);
@@ -49,7 +52,10 @@ export function CompletenessPanel({
   const [savedAt, setSavedAt] = useState<number | null>(null);
 
   // Recompute completeness live as the user edits.
-  const completeness = useMemo(() => evaluateCompleteness(draft), [draft]);
+  const completeness = useMemo(
+    () => evaluateCompleteness(draft, definition),
+    [draft, definition],
+  );
 
   const setField = (path: string, value: unknown) => {
     setDraft((prev) => setValueAtPath(prev as Record<string, unknown>, path, value));
@@ -218,6 +224,26 @@ function FieldRow({
               onNumber(e.target.value === "" ? null : Number(e.target.value))
             }
           />
+        ) : field.kind === "date" ? (
+          <input
+            type="date"
+            className="tron-input mt-0.5 text-sm"
+            value={typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : ""}
+            onChange={(e) => onText(e.target.value)}
+          />
+        ) : field.kind === "choice" ? (
+          <select
+            className="tron-input mt-0.5 text-sm"
+            value={typeof value === "string" ? value : ""}
+            onChange={(e) => onText(e.target.value)}
+          >
+            <option value="">—</option>
+            {(field.options ?? []).map((opt) => (
+              <option key={opt} value={opt}>
+                {opt}
+              </option>
+            ))}
+          </select>
         ) : field.kind === "list" ? (
           <textarea
             className="tron-input mt-0.5 text-sm"

@@ -1,6 +1,8 @@
 // Hand-written row shapes for v1. Once the project is linked you can replace
 // this file with `supabase gen types typescript --linked > src/lib/db-types.ts`.
 
+import type { JsonTemplateDefinition } from "@/lib/paperwork/template-def";
+
 export type Role = "ATP" | "REP" | "MANAGER" | "BOSS";
 /** Payer workflow code — see `payer_types` table (e.g. MEDICARE, MEDICAID, COMMERCIAL). */
 export type PayerType = string;
@@ -201,6 +203,18 @@ export type PaperworkSourceFile = {
   created_at: string;
 };
 
+/** Editable JSON field-structure template for a patient (payer) type. */
+export type PaperworkJsonTemplate = {
+  id: string;
+  payer_type: string;
+  name: string;
+  is_default: boolean;
+  definition: JsonTemplateDefinition;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type PaperworkJobKind = "extract" | "template" | "fill";
 export type PaperworkJobStatus = "PENDING" | "RUNNING" | "DONE" | "ERROR";
 
@@ -236,6 +250,7 @@ export type Database = {
       paperwork_patient_data: { Row: PaperworkPatientDataRow; Insert: Partial<PaperworkPatientDataRow> & { patient_id: string }; Update: Partial<PaperworkPatientDataRow> };
       paperwork_templates: { Row: PaperworkTemplate; Insert: Partial<PaperworkTemplate> & { name: string }; Update: Partial<PaperworkTemplate> };
       paperwork_logos: { Row: PaperworkLogo; Insert: Partial<PaperworkLogo> & { name: string; data_uri: string }; Update: Partial<PaperworkLogo> };
+      paperwork_json_templates: { Row: PaperworkJsonTemplate; Insert: Partial<PaperworkJsonTemplate> & { payer_type: string; name: string }; Update: Partial<PaperworkJsonTemplate> };
       paperwork_documents: { Row: PaperworkDocument; Insert: Partial<PaperworkDocument> & { patient_id: string }; Update: Partial<PaperworkDocument> };
       paperwork_source_files: { Row: PaperworkSourceFile; Insert: Partial<PaperworkSourceFile> & { patient_id: string; storage_path: string; filename: string }; Update: Partial<PaperworkSourceFile> };
       paperwork_jobs: { Row: PaperworkJob; Insert: Partial<PaperworkJob> & { kind: PaperworkJobKind }; Update: Partial<PaperworkJob> };
